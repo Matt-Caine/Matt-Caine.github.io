@@ -205,6 +205,18 @@ body.loaded .section {
 	clear: both;
 }
 
+.disabled {
+    color: gray;
+    pointer-events: none; /* Prevents clicking */
+    text-decoration: none; /* Remove underline */
+}
+
+.onnne {
+    color: white;
+    pointer-events: none; /* Prevents clicking */
+    text-decoration: none; /* Remove underline */
+}
+
 /* 4. Typography */
 h1,
 h2,

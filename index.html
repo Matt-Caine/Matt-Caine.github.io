@@ -11,8 +11,17 @@
     <script>
         window.onload = function() {
             window.scrollTo(0, 0);
+        };
+
+        function updateClock() {
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            document.getElementById('live-clock').innerText = `${hours}:${minutes}:${seconds}`;
         }
-    </script> 
+        setInterval(updateClock, 1000);
+    </script>
 
     <link href='https://fonts.googleapis.com/css?family=Roboto+Mono:400,100,300italic,300,100italic,400italic,500,500italic,700,700italic&subset=latin,cyrillic' rel='stylesheet'>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
@@ -51,16 +60,10 @@
             <div class="head-top">
                 <a href="#" class="menu-btn"><span></span></a>
                 <div class="top-menu">
-                    <h class="disabled"> MΛTT CΛINΞ</h>
+                    
                 </div>
-
-                <img src="images/flag.png" alt="Flag" style="position: fixed; top: 50px; left: 50px; width: 57.6px; height: 28.8px; z-index: 1000;">
-
+             
             </div>
-
-        
-
-
         </header>
 
         <div class="wrapper">
@@ -75,34 +78,27 @@
                                 <p>⌚ Military & Tool Watch Enthusiast</p>
                             </div>
                             <span class="typed-subtitle"></span>
-
                         </div>
-
-                        
-
                         <div class="soc">
                             <br>
-                        
                             <a target="_blank" href="https://steamcommunity.com/id/Matts_Profile/">
                                 <span class="ion ion-steam"></span> / Steam
                             </a>&nbsp;&nbsp;&nbsp;&nbsp;
                             <a target="_blank" href="https://github.com/Matt-Caine">
                                 <span class="ion ion-social-github"></span> / GitHub
                             </a>&nbsp;&nbsp;&nbsp;&nbsp;
-                            
                             <a href="redacted.html" class="disabled">
                                 <span class="ion ion-social-linkedin"></span> / <s>LinkedIn</s>
-                          
+                            </a>
                         </div>
-
                         <a href="#" class="mouse_btn"></a>
-                        
+                        <br><br><br><br><h class="onnne">Current Time: <h id="live-clock" class="disabled">00:00:00</h>
                     </div>
                 </div>
+            
             </div>
 
             <footer>
-
                 <div class="soc">
                     <h class="onnne"> Site Last Updated:<br><h class="disabled"><span id="last-updated">Loading...</span></h>
                 </div>
@@ -123,13 +119,9 @@
     <script src="js/imagesloaded.pkgd.js"></script>
     <script src="js/isotope.pkgd.js"></script>
     <script src="js/glitche-scripts.js"></script>
-    <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
-    <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
-    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
-
     <script>
-        const repoOwner = 'Matt-Caine'; // Replace with the repository owner's username
-        const repoName = 'Matt-Caine.github.io'; // Replace with the repository name
+        const repoOwner = 'Matt-Caine'; 
+        const repoName = 'Matt-Caine.github.io';
 
         async function fetchLastUpdated() {
             try {
@@ -145,7 +137,6 @@
                 document.getElementById('last-updated').innerText = 'Error fetching data';
             }
         }
-
         fetchLastUpdated();
     </script>
 </body>

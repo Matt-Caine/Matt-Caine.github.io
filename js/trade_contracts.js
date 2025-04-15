@@ -1,560 +1,286 @@
+// contracts.js — Overhauled Contract system for ΛTLΛS | ΞQUINOX™
+
 let activeContracts = [];
 
-function generateRandomContract() {
-  const resource =
-    RESOURCE_TYPES[Math.floor(Math.random() * RESOURCE_TYPES.length)];
-  const destination =
-    SYSTEM_NAMES[Math.floor(Math.random() * SYSTEM_NAMES.length)];
-  const amount = Math.floor(Math.random() * 100) + 50;
-  const baseReward = RESOURCE_DATA[resource].base * amount;
-  const reward = Math.floor(baseReward * (1.4 + Math.random() * 0.8));
-  const duration = 180000 + Math.floor(Math.random() * 300000); // 3–8 minutes
+function generateContract(issuer = "ΛTLΛS | ΞQUINOX™") {
+  const type = pickRandom(["delivery", "supply", "acquire"]);
+  const resource = pickRandom(RESOURCE_TYPES);
+  const destination = pickRandom(SYSTEM_NAMES.filter(s => s !== player.location));
+  const amount = randInt(50, 150);
+  const scarcity = 1 + (getScarcityModifier(resource) || 0);
+  const urgency = 1.2 + Math.random() * 0.8;
+  const risk = Math.random(); // 0.0 (safe) to 1.0 (high risk)
+  const base = RESOURCE_DATA[resource].base;
+  const reward = Math.floor(base * amount * (1 + scarcity + urgency + risk));
+  const duration = randInt(180000, 480000); // 3–8 min
 
-  const contract = {
+  const flavor = generateFlavorText(type, resource, destination);
+
+  activeContracts.push({
     id: `CON-${Date.now().toString().slice(-5)}`,
+    type,
     resource,
     amount,
     destination,
     reward,
     timeLimit: duration,
-    expiresAt: Date.now() + duration,
+    risk: risk.toFixed(2),
+    issuedAt: null,
     status: "available",
-    issuer: Math.random() < 0.3 ? getRandomCorporation() : "ΛTLΛS | ΞQUINOX™",
-  };
-
-  activeContracts.push(contract);
-  renderContracts();
+    issuer,
+    flavor
+  });
 }
 
-function renderContracts() {
+function generateFlavorText(type, resource, destination) {
+  switch (type) {
+    case "delivery":
+      return `Urgent delivery needed! ${resource} is required at ${destination}.`;
+    case "supply":
+      return `System ${destination} is low on ${resource}. Help stabilize their economy.`;
+    case "acquire":
+      return `${destination} posted a bounty for rare ${resource}. Retrieve and deliver.`;
+    default:
+      return `Deliver ${resource} to ${destination}.`;
+  }
+}
+
+function renderAvailableContracts() {
   const container = document.getElementById("contractsContainer");
   container.innerHTML = "";
 
-  const available = activeContracts.filter((c) => c.status === "available");
+  const available = activeContracts.filter(c => c.status === "available");
+  const hasActive = activeContracts.some(c => c.status === "accepted");
 
-  if (available.length > 0) {
-    available.forEach((contract, i) => {
-      const card = document.createElement("div");
-      card.className = "contract-card";
+  console.log("Has active contract?", hasActive);
 
-      const minutes = Math.floor(contract.timeLimit / 60000);
-      const canDeliver = player.location === contract.destination;
-
-      card.innerHTML = `
-                <h6>Deliver ${contract.amount}${UNIT} ${contract.resource}</h6>
-                <p>To: ${contract.destination}</p>
-                <small>Reward: <span class="text-success">${contract.reward.toFixed(
-                  2
-                )}ᶜ</span></small><br>
-                <small>Time Limit: <span>${minutes} minute${
-        minutes !== 1 ? "s" : ""
-      }</span></small>
-                <div class="contract-card-buttons mt-2">
-                    <button class="btn btn-success btn-sm" onclick="acceptContract(${i})">Accept</button>
-                    <button class="btn btn-danger btn-sm" onclick="declineContract(${i})">Decline</button>
-                </div>
-            `;
-      container.appendChild(card);
-    });
-  } else {
-    container.innerHTML = `<p class="text-muted small">No contracts available.</p>`;
-  }
-}
-
-function acceptContract(index) {
-  const contract = activeContracts[index];
-  if (!contract || contract.status !== "available") return;
-  contract.status = "accepted";
-  contract.issuedAt = Date.now();
-  renderContracts();
-  renderActiveContracts();
-}
-
-function declineContract(index) {
-  activeContracts.splice(index, 1);
-  renderContracts();
-}
-
-function checkContractExpirations() {
-  const now = Date.now();
-  activeContracts.forEach((contract) => {
-    if (
-      contract.status === "accepted" &&
-      now > contract.issuedAt + contract.timeLimit
-    ) {
-      contract.status = "failed";
-      log(`Contract ${contract.id} failed.`);
-    }
-  });
-  renderContracts();
-}
-
-function tryFulfillContracts() {
-  activeContracts.forEach((c) => {
-    if (c.status !== "accepted") return;
-    if (player.location !== c.destination) return;
-
-    const invAmount =
-      player.inventory[c.resource]?.reduce((sum, [q]) => sum + q, 0) || 0;
-    if (invAmount >= c.amount) {
-      let toRemove = c.amount;
-      const batches = player.inventory[c.resource];
-      for (let i = 0; i < batches.length && toRemove > 0; i++) {
-        const [qty, price] = batches[i];
-        const take = Math.min(qty, toRemove);
-        batches[i][0] -= take;
-        toRemove -= take;
-      }
-      player.inventory[c.resource] = batches.filter(([q]) => q > 0);
-
-      player.credits += c.reward;
-      c.status = "completed";
-      flash("credits");
-
-      log(
-        `Contract ${c.id} completed: Delivered ${c.amount}${UNIT} of ${c.resource} to ${c.destination}. +${c.reward}ᶜ`
-      );
-      logMarket(
-        `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> completed <span class="text-info">${
-          c.id
-        }</span>: Delivered <strong>${c.amount}${UNIT}</strong> of <strong>${
-          c.resource
-        }</strong> to <strong>${
-          c.destination
-        }</strong> — <span class="text-success">+${c.reward.toFixed(2)}ᶜ</span>`
-      );
-
-      updateUI();
-    }
-  });
-}
-
-function renderActiveContracts() {
-  const container = document.getElementById("activeContractsContainer");
-  if (!container) return;
-
-  container.innerHTML = "";
-
-  const now = Date.now();
-  const active = activeContracts.filter((c) => c.status === "accepted");
-
-  if (active.length === 0) {
-    container.innerHTML =
-      "<div class='text-muted small'>No active contracts.</div>";
+  if (available.length === 0) {
+    container.innerHTML = "<p class='text-muted small'>No available contracts.</p>";
     return;
   }
 
-  active.forEach((contract) => {
-    const remaining = Math.max(0, contract.issuedAt + contract.timeLimit - now);
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor((remaining % 60000) / 1000);
-    const countdown = `${mins}m ${secs}s`;
-
-    const canDeliver =
-      player.location === contract.destination &&
-      (player.inventory[contract.resource]?.reduce((sum, [q]) => sum + q, 0) ||
-        0) >= contract.amount;
-
-    const card = document.createElement("div");
-    card.className = "contract-card";
-    card.innerHTML = `
-            <h6>Deliver ${contract.amount}${UNIT} ${contract.resource}</h6>
-            <p>To: ${contract.destination}</p>
-            <small>Reward: <span class="text-success">${contract.reward.toFixed(
-              2
-            )}ᶜ</span></small><br>
-            <small>Time Left: <span class="${
-              remaining < 60000 ? "text-danger" : ""
-            }">${countdown}</span></small>
-            <div class="contract-card-buttons mt-2">
-                <button class="btn btn-success btn-sm" ${
-                  canDeliver
-                    ? `onclick="deliverContract('${contract.id}')"`
-                    : 'disabled title="Wrong location or insufficient resources."'
-                }>
-                    Deliver
-                </button>
-            </div>
-        `;
-    container.appendChild(card);
-  });
+  available.forEach((c, i) => container.appendChild(createContractCard(c, i, hasActive)));
 }
 
-function acceptContract(index) {
-  const contract = activeContracts[index];
-  if (!contract || contract.status !== "available") return;
-  contract.status = "accepted";
-  contract.issuedAt = Date.now();
-  renderContracts();
-  renderActiveContracts();
-}
 
-function declineContract(index) {
-  activeContracts.splice(index, 1);
-  renderContracts();
-}
-
-function checkContractExpirations() {
-  const now = Date.now();
-  activeContracts.forEach((contract) => {
-    if (
-      contract.status === "accepted" &&
-      now > contract.issuedAt + contract.timeLimit
-    ) {
-      contract.status = "failed";
-      log(`Contract ${contract.id} failed.`);
-    }
-  });
-  renderContracts();
-}
-
-function tryFulfillContracts() {
-  activeContracts.forEach((c) => {
-    if (c.status !== "accepted") return;
-    if (player.location !== c.destination) return;
-
-    const invAmount =
-      player.inventory[c.resource]?.reduce((sum, [q]) => sum + q, 0) || 0;
-    if (invAmount >= c.amount) {
-      let toRemove = c.amount;
-      const batches = player.inventory[c.resource];
-      for (let i = 0; i < batches.length && toRemove > 0; i++) {
-        const [qty, price] = batches[i];
-        const take = Math.min(qty, toRemove);
-        batches[i][0] -= take;
-        toRemove -= take;
-      }
-      player.inventory[c.resource] = batches.filter(([q]) => q > 0);
-
-      player.credits += c.reward;
-      c.status = "completed";
-      flash("credits");
-
-      log(
-        `Contract ${c.id} completed: Delivered ${c.amount}${UNIT} of ${c.resource} to ${c.destination}. +${c.reward}ᶜ`
-      );
-      logMarket(
-        `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> completed <span class="text-info">${
-          c.id
-        }</span>: Delivered <strong>${c.amount}${UNIT}</strong> of <strong>${
-          c.resource
-        }</strong> to <strong>${
-          c.destination
-        }</strong> — <span class="text-success">+${c.reward.toFixed(2)}ᶜ</span>`
-      );
-
-      updateUI();
-    }
-  });
-}
-
-function renderActiveContracts() {
-  const container = document.getElementById("activeContractsContainer");
-  if (!container) return;
-
-  container.innerHTML = "";
-
-  const now = Date.now();
-  const active = activeContracts.filter((c) => c.status === "accepted");
-
-  if (active.length === 0) {
-    container.innerHTML =
-      "<div class='text-muted small'>No active contracts.</div>";
-    return;
-  }
-
-  active.forEach((contract) => {
-    const remaining = Math.max(0, contract.issuedAt + contract.timeLimit - now);
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor((remaining % 60000) / 1000);
-    const countdown = `${mins}m ${secs}s`;
-
-    const canDeliver =
-      player.location === contract.destination &&
-      (player.inventory[contract.resource]?.reduce((sum, [q]) => sum + q, 0) ||
-        0) >= contract.amount;
-
-    const card = document.createElement("div");
-    card.className = "contract-card";
-    card.innerHTML = `
-            <h6>Deliver ${contract.amount}${UNIT} ${contract.resource}</h6>
-            <p>To: ${contract.destination}</p>
-            <small>Reward: <span class="text-success">${contract.reward.toFixed(
-              2
-            )}ᶜ</span></small><br>
-            <small>Time Left: <span class="${
-              remaining < 60000 ? "text-danger" : ""
-            }">${countdown}</span></small>
-            <div class="contract-card-buttons mt-2">
-                <button class="btn btn-success btn-sm" ${
-                  canDeliver
-                    ? `onclick="deliverContract('${contract.id}')"`
-                    : 'disabled title="Wrong location or insufficient resources."'
-                }>
-                    Deliver
-                </button>
-            </div>
-        `;
-    container.appendChild(card);
-  });
-}
-
-function tryFulfillContracts() {
-  activeContracts.forEach((c) => {
-    if (c.status !== "accepted") return;
-    if (player.location !== c.destination) return;
-
-    const invAmount =
-      player.inventory[c.resource]?.reduce((sum, [q]) => sum + q, 0) || 0;
-    if (invAmount >= c.amount) {
-      // Remove resources
-      let toRemove = c.amount;
-      const batches = player.inventory[c.resource];
-      for (let i = 0; i < batches.length && toRemove > 0; i++) {
-        const [qty, price] = batches[i];
-        const take = Math.min(qty, toRemove);
-        batches[i][0] -= take;
-        toRemove -= take;
-      }
-      player.inventory[c.resource] = batches.filter(([q]) => q > 0);
-
-      player.credits += c.reward;
-      c.status = "completed";
-      flash("credits");
-
-      log(
-        `Contract ${c.id} completed: Delivered ${c.amount}${UNIT} of ${c.resource} to ${c.destination}. +${c.reward}ᶜ`
-      );
-      logMarket(
-        `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> completed <span class="text-info">${
-          c.id
-        }</span>: Delivered <strong>${c.amount}${UNIT}</strong> of <strong>${
-          c.resource
-        }</strong> to <strong>${
-          c.destination
-        }</strong> — <span class="text-success">+${c.reward.toFixed(2)}ᶜ</span>`
-      );
-
-      updateUI();
-    }
-  });
-}
-
-function acceptContract(index) {
-  const contract = activeContracts[index];
-  if (!contract || contract.status !== "available") return;
-  contract.status = "accepted";
-  contract.issuedAt = Date.now();
-  renderContracts();
-  renderActiveContracts(); // ✅ also update the top list
-}
-
-function declineContract(index) {
-  activeContracts.splice(index, 1);
-  renderContracts();
-}
-
-function checkContractExpirations() {
-  const now = Date.now();
-  activeContracts.forEach((contract) => {
-    if (contract.status === "active" && contract.expiresAt <= now) {
-      contract.status = "expired";
-      log(`Contract ${contract.id} failed.`);
-    }
-  });
-  renderContracts();
-}
-
-function tryFulfillContracts() {
-  activeContracts.forEach((c) => {
-    if (c.status !== "active") return;
-    if (player.location !== c.destination) return;
-
-    const invAmount =
-      player.inventory[c.resource]?.reduce((sum, [q]) => sum + q, 0) || 0;
-    if (invAmount >= c.amount) {
-      // Remove resources
-      let toRemove = c.amount;
-      const batches = player.inventory[c.resource];
-      for (let i = 0; i < batches.length && toRemove > 0; i++) {
-        const [qty, price] = batches[i];
-        const take = Math.min(qty, toRemove);
-        batches[i][0] -= take;
-        toRemove -= take;
-      }
-      player.inventory[c.resource] = batches.filter(([q]) => q > 0);
-
-      player.credits += c.reward;
-      c.status = "completed";
-      flash("credits");
-
-      log(
-        `Contract ${c.id} completed: Delivered ${c.amount}${UNIT} of ${c.resource} to ${c.destination}. +${c.reward}ᶜ`
-      );
-      logMarket(
-        `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> completed <span class="text-info">${
-          c.id
-        }</span>: Delivered <strong>${c.amount}${UNIT}</strong> of <strong>${
-          c.resource
-        }</strong> to <strong>${
-          c.destination
-        }</strong> — <span class="text-success">+${c.reward.toFixed(2)}ᶜ</span>`
-      );
-
-      updateUI();
-    }
-  });
-}
-
-function renderActiveContracts() {
-  const container = document.getElementById("activeContractsContainer");
-  if (!container) return;
-
-  container.innerHTML = ""; // Clear existing
-
-  const now = Date.now();
-  const active = activeContracts.filter((c) => c.status === "accepted");
-
-  if (active.length === 0) {
-    container.innerHTML =
-      "<div class='text-muted small'>No active contracts.</div>";
-    return;
-  }
-
-  active.forEach((contract) => {
-    const remaining = Math.max(0, contract.issuedAt + contract.timeLimit - now);
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor((remaining % 60000) / 1000);
-
-    const countdown = `${mins}m ${secs}s`;
-
-    const card = document.createElement("div");
-    card.className = "contract-card";
-    card.innerHTML = `
-      <h6>Deliver ${contract.amount} ${contract.resource}</h6>
-      <p>To: ${contract.destination}</p>
-      <small>Reward: <span class="text-success">${
-        contract.reward
-      }ᶜ</span></small><br>
-      <small>Time Left: <span class="${
-        remaining < 60000 ? "text-danger" : ""
-      }">${countdown}</span></small>
-        <div class="contract-card-buttons mt-2">
-        <button class="btn btn-success btn-sm" onclick="deliverContract('${
-          contract.id
-        }')">Deliver</button>
-        </div>
-      
-    `;
-    container.appendChild(card);
-  });
-}
-
-function checkContracts() {
-  const now = Date.now();
-  activeContracts.forEach((contract) => {
-    if (
-      contract.status === "accepted" &&
-      now > contract.issuedAt + contract.timeLimit
-    ) {
-      contract.status = "failed";
-      logMarket(
-        `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> contract ${contract.id} <span class="text-danger">FAILED</span>.`
-      );
-    }
-  });
-
-  renderActiveContracts(); // Optional: refresh active contracts UI
-}
-
-function deliverContract(contractId) {
-  const contract = activeContracts.find((c) => c.id === contractId);
+function cancelContractById(id) {
+  const contract = activeContracts.find(c => c.id === id);
   if (!contract || contract.status !== "accepted") return;
 
-  if (player.location !== contract.destination) {
-    flash("location", "Must be at destination to deliver.");
+  const penaltyRate = 0.25;
+  const fine = Math.floor(contract.reward * penaltyRate);
+
+  if (player.credits < fine) {
+    log("You don't have enough credits to pay the cancellation fee.");
     return;
   }
 
-  const invAmount =
-    player.inventory[contract.resource]?.reduce((sum, [q]) => sum + q, 0) || 0;
-  if (invAmount < contract.amount) {
-    flash("inventory", "Not enough materials to deliver.");
-    return;
-  }
+  player.credits -= fine;
+  contract.status = "failed";
+  contract.failedAt = Date.now();
+  log(`Contract ${contract.id} canceled. Paid ¤${fine} in penalties.`);
 
-  // Fulfill contract
-  let toRemove = contract.amount;
-  const batches = player.inventory[contract.resource];
-  for (let i = 0; i < batches.length && toRemove > 0; i++) {
-    const [qty, price] = batches[i];
-    const take = Math.min(qty, toRemove);
-    batches[i][0] -= take;
-    toRemove -= take;
-  }
-  player.inventory[contract.resource] = batches.filter(([q]) => q > 0);
+  console.log("After cancel:", activeContracts); // 👈 add this
 
-  player.credits += contract.reward;
-  contract.status = "completed";
-  flash("credits");
-
-  log(
-    `Contract ${contract.id} completed: Delivered ${contract.amount}${UNIT} of ${contract.resource} to ${contract.destination}. +${contract.reward}ᶜ`
-  );
-  logMarket(
-    `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> completed <span class="text-info">${
-      contract.id
-    }</span>: Delivered <strong>${contract.amount}${UNIT}</strong> of <strong>${
-      contract.resource
-    }</strong> to <strong>${
-      contract.destination
-    }</strong> — <span class="text-success">+${contract.reward.toFixed(
-      2
-    )}ᶜ</span>`
-  );
-
-  renderActiveContracts();
   updateUI();
+  renderActiveContracts();
+  renderAvailableContracts();
 }
 
-function fulfillContract(contractId) {
-  const contract = activeContracts.find((c) => c.id === contractId);
-  if (!contract || contract.status !== "accepted") return;
 
-  const invAmount =
-    player.inventory[contract.resource]?.reduce((sum, [q]) => sum + q, 0) || 0;
-  if (player.location !== contract.destination || invAmount < contract.amount)
+
+function createContractCard(contract, index, hasActive) {
+  const card = document.createElement("div");
+  card.className = "contract-card";
+
+  if (contract.status === "failed") card.classList.add("failed");
+
+  const minutes = Math.floor(contract.timeLimit / 60000);
+  let buttons = "";
+
+  if (contract.status === "accepted") {
+    buttons += `
+      <button class="btn btn-success btn-sm" onclick="deliverContract('${contract.id}')">Deliver</button>
+      <button class="btn btn-warning btn-sm" onclick="cancelContractById('${contract.id}')" title="Pay 25% penalty to cancel">
+        Cancel <span style="color: #dc3545; font-size: 0.75em;">(-25%)</span>
+      </button>
+    `;
+  } else {
+    buttons += `
+      <button class="btn btn-success btn-sm" onclick="acceptContractById('${contract.id}')" ${hasActive ? 'disabled title="You already have an active contract."' : ''}>Accept</button>
+      <button class="btn btn-secondary btn-sm" onclick="rerollContractById('${contract.id}')" ${hasActive ? 'disabled title="Cannot reroll with active contract."' : ''}>Reroll</button>
+      <button class="btn btn-danger btn-sm" onclick="declineContractById('${contract.id}')">Decline</button>
+    `;
+  }
+
+  card.innerHTML = `
+    <h6>${contract.flavor}</h6>
+    <p><strong>${contract.amount}${UNIT} ${contract.resource}</strong></p>
+    <p>To: <strong>${contract.destination}</strong></p>
+    <small>Reward: <span class="text-success">${contract.reward.toFixed(2)}ᶜ</span></small><br>
+    <small>Time Limit: ${minutes} min — Risk: <span class="text-warning">${(contract.risk * 100).toFixed(0)}%</span></small>
+    <div class="contract-card-buttons mt-2">
+      ${buttons}
+    </div>
+  `;
+  return card;
+}
+
+
+
+
+
+
+
+function renderActiveContracts() {
+  const container = document.getElementById("activeContractsContainer");
+  container.innerHTML = "";
+  const now = Date.now();
+  const active = activeContracts.filter(c => c.status === "accepted");
+
+  if (active.length === 0) {
+    container.innerHTML = "<div class='text-muted small'>No active contracts.</div>";
     return;
+  }
 
-  let toRemove = contract.amount;
-  const batches = player.inventory[contract.resource];
+  active.forEach(contract => {
+    const remaining = Math.max(0, contract.issuedAt + contract.timeLimit - now);
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    const countdown = `${mins}m ${secs}s`;
+    const canDeliver = player.location === contract.destination &&
+      (player.inventory[contract.resource]?.reduce((s, [q]) => s + q, 0) || 0) >= contract.amount;
+
+    const card = document.createElement("div");
+    card.className = "contract-card";
+    card.innerHTML = `
+    <h6>${contract.flavor}</h6>
+    <p><strong>${contract.amount}${UNIT} ${contract.resource}</strong></p>
+    <p>To: <strong>${contract.destination}</strong></p>
+    <small>Reward: <span class="text-success">${contract.reward.toFixed(2)}ᶜ</span></small><br>
+    <small>Time Left: <span class="${remaining < 60000 ? "text-danger" : ""}">${countdown}</span></small>
+    <div class="contract-card-buttons mt-2">
+      <button class="btn btn-success btn-sm" ${canDeliver ? `onclick="deliverContract('${contract.id}')"` : 'disabled title="Wrong location or insufficient resources."'}>
+        Deliver
+      </button>
+      <button class="btn btn-danger btn-sm" onclick="cancelContractById('${contract.id}')" title="Pay 25% penalty to cancel">
+        Cancel <span font-size: 0.75em;">(-25% Fine)</span>
+      </button>
+
+    </div>
+  `;
+
+
+    container.appendChild(card);
+  });
+}
+
+function acceptContractById(id) {
+  const contract = activeContracts.find(c => c.id === id);
+  if (!contract || contract.status !== "available") return;
+
+  const hasActive = activeContracts.some(c => c.status === "accepted");
+  if (hasActive) {
+    log("You already have an active contract.");
+    return;
+  }
+
+  contract.status = "accepted";
+  contract.issuedAt = Date.now();
+
+  console.log("Accepted:", contract.id); // Debug
+
+  updateUI();
+  renderAvailableContracts();
+  renderActiveContracts();
+}
+
+
+function rerollContractById(id) {
+  const index = activeContracts.findIndex(c => c.id === id);
+  if (index === -1 || activeContracts[index].status !== "available") return;
+  if (player.credits < 100) {
+    log("Insufficient credits to reroll.");
+    return;
+  }
+  player.credits -= 100;
+  activeContracts.splice(index, 1);
+  generateContract();
+  renderAvailableContracts();
+  flash("credits");
+}
+
+function declineContractById(id) {
+  const index = activeContracts.findIndex(c => c.id === id);
+  if (index !== -1) {
+    activeContracts.splice(index, 1);
+    renderAvailableContracts();
+  }
+}
+
+
+
+
+
+function deliverContract(id) {
+  const c = activeContracts.find(c => c.id === id);
+  if (!c || c.status !== "accepted") return;
+  if (player.location !== c.destination) return;
+
+  const inv = player.inventory[c.resource]?.reduce((s, [q]) => s + q, 0) || 0;
+  if (inv < c.amount) return;
+
+  deductInventory(c.resource, c.amount);
+  player.credits += c.reward;
+  c.status = "completed";
+  flash("credits");
+  logSuccess(c);
+  updateUI();
+  renderActiveContracts();
+}
+
+function checkContractTimers() {
+  const now = Date.now();
+  activeContracts.forEach(c => {
+    if (c.status === "accepted" && now > c.issuedAt + c.timeLimit) {
+      c.status = "failed";
+      logMarket(`<span class="text-warning">${c.issuer}</span> contract ${c.id} <span class="text-danger">FAILED</span>.`);
+    }
+  });
+  renderActiveContracts();
+}
+
+function deductInventory(resource, amount) {
+  let toRemove = amount;
+  const batches = player.inventory[resource];
   for (let i = 0; i < batches.length && toRemove > 0; i++) {
     const [qty] = batches[i];
     const take = Math.min(qty, toRemove);
     batches[i][0] -= take;
     toRemove -= take;
   }
-  player.inventory[contract.resource] = batches.filter(([q]) => q > 0);
+  player.inventory[resource] = batches.filter(([q]) => q > 0);
+}
 
-  player.credits += contract.reward;
-  contract.status = "completed";
-  flash("credits");
+function logSuccess(contract) {
+  log(`Contract ${contract.id} completed: Delivered ${contract.amount}${UNIT} of ${contract.resource} to ${contract.destination}. +${contract.reward}ᶜ`);
+  logMarket(`<span class="text-warning">${contract.issuer}</span> completed <span class="text-info">${contract.id}</span>: Delivered <strong>${contract.amount}${UNIT}</strong> of <strong>${contract.resource}</strong> to <strong>${contract.destination}</strong> — <span class="text-success">+${contract.reward.toFixed(2)}ᶜ</span>`);
+}
 
-  log(
-    `Contract ${contract.id} completed: Delivered ${contract.amount}${UNIT} of ${contract.resource} to ${contract.destination}. +${contract.reward}ᶜ`
-  );
-  logMarket(
-    `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> completed <span class="text-info">${
-      contract.id
-    }</span>: Delivered <strong>${contract.amount}${UNIT}</strong> of <strong>${
-      contract.resource
-    }</strong> to <strong>${
-      contract.destination
-    }</strong> — <span class="text-success">+${contract.reward.toFixed(
-      2
-    )}ᶜ</span>`
-  );
+// Utility
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
-  updateUI();
-  renderActiveContracts(); // refresh UI
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function getScarcityModifier(resource) {
+  let scarcityCount = 0;
+  for (const sys of SYSTEM_NAMES) {
+    const available = systems[sys].market[resource];
+    if (!available) scarcityCount++;
+  }
+  return scarcityCount / SYSTEM_NAMES.length;
 }

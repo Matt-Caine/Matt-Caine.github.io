@@ -34,7 +34,7 @@ body, html {
 }
 
 .supply-demand-info {
-  font-size: 0.7rem;
+  font-size: 0.65em;
   color: #aaa;
   margin-top: 4px;
   line-height: 1.2;
@@ -58,6 +58,9 @@ body, html {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  border-top: 1px solid #444;
+  border-bottom: 1px solid #444;
+
 }
 
 #marketHeadingTable th {
@@ -159,6 +162,48 @@ body, html {
   position: relative;
   overflow: auto;
 }
+
+.modal2warp {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;  /* full screen */
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex; /* use flex to center content */
+  justify-content: center;
+  align-items: center;
+  z-index: 9999; /* make sure it's on top */
+}
+
+.modal2warp .modal-content {
+  background-color: #111;
+  padding: 20px;
+  border-radius: 8px;
+  width: 50%;
+  max-width: 600px;
+  text-align: center;
+}
+
+.specialized-cell {
+  position: relative;
+}
+
+#logoImage {
+  height: 800px;
+  width: auto;
+}
+
+.specialized-cell::after {
+  content: "⭓"; /* You can change this to any symbol or emoji */
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 0.5em;
+  color: #ffc107; /* golden sparkle */
+  pointer-events: none;
+}
+
 
 .close {
   position: absolute;
@@ -339,11 +384,7 @@ section.console-wrapper h5 span.text-success {
   border: 1px solid #444;
 }
 
-.btn-group .btn.active {
-  background-color: #212529;
-  border-color: #ffffff;
-  color: #fff;
-}
+
 
 .btn-group .btn:not(.active):hover {
   background-color: rgba(255, 255, 255, 0.1);
@@ -634,12 +675,33 @@ th:hover {
   text-shadow: 0 0 6px #00ffffaa;
 }
 
-.flash {
-  background-color: #444 !important;
+.lowest-price-cell {
+  background-color: #dc3545 !important; /* deep green */
+  color: #420e13;
+  font-weight: bold;
+  box-shadow: 0 0 6px #dc3545;
 }
 
+
+
+.highest-price-cell {
+  background-color: rgb(0, 255, 106) !important; /* deep red */
+  color: rgb(13, 88, 44);
+  font-weight: bold;
+  box-shadow: 0 0 6px rgb(0, 255, 106);
+}
+
+
+.nav-link.disabled {
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+
+
+
 th.highest-spread {
-  color: rgb(71, 255, 111) !important;
+  color: rgb(0, 255, 106) !important;
   /* Dark text */
 }
 
@@ -666,17 +728,32 @@ th.highest-spread {
   color: #000000;
 }
 
+#shipments li {
+  background-color: #111111;
+}
+
 .dropdown-wrapper {
   position: relative;
   margin-bottom: 2.5rem;
   /* ensures space below the dropdown */
 }
 
-.current-system-row {
+.current-system-row td:first-child {
   color: #ffc107;
   font-weight: bold;
-  font-display: swap;
+  position: relative; /* Needed for absolute positioning of ::after */
 }
+
+.current-system-row td:first-child::after {
+  content: "◤"; /* Symbol to display */
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 0.82em;
+  color: #ffc107; /* Golden sparkle */
+  pointer-events: none;
+}
+
 
 .greyed-out {
   color: #666;
@@ -1082,6 +1159,18 @@ body.modal-open {
   margin-bottom: 1rem;
 }
 
+.contract-card.failed {
+  opacity: 0.6;
+  border-color: #dc3545;
+}
+
+#contractsContainer {
+  max-height: 500px; /* Adjust based on your layout */
+  overflow-y: auto;
+  padding-right: 8px; /* Optional: space for scrollbar */
+}
+
+
 #contractsContainer .contract-card {
   background-color: #111;
   color: #ddd;
@@ -1208,7 +1297,7 @@ body.modal-open {
 }
 
 .contract-card.expired {
-  border-color: red;
+  border-color: #dc3545;
   opacity: 0.6;
 }
 
@@ -1378,6 +1467,7 @@ body.modal-open {
 #marketLog {
   max-width: 100%;
   min-width: 100%;
+  height: 120px;
 
 }
 
@@ -1447,6 +1537,148 @@ body.modal-open {
   box-shadow: 0 0 20px rgba(0,0,0,0.6);
   color: white;
 }
+
+.breakdown {
+  display: flex;
+  flex-direction: column;
+  margin-top: 2px;
+  padding: 0;
+  font-size: 0.75em;
+  line-height: 1.1;
+}
+
+.breakdown .main-value {
+  font-weight: bold;
+  font-size: 0.9em;
+  margin: 0;
+  padding: 0;
+}
+
+.break-line {
+  color: #aaa;
+  margin: 0;
+  padding: 0;
+  font-size: 0.72em;
+}
+
+
+.info-card-wrapper {
+  padding: 6px;
+  margin: 0;
+}
+
+.info-card-wrapper li {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background-color: #111;
+  border-left: 4px solid #555;
+  list-style: none;
+  font-size: 0.9em;
+  color: #aaa;
+}
+
+.dark-modal .modal-content {
+  background-color: #111;
+  border: 1px solid #333;
+  color: #eee;
+  border-radius: 8px;
+  padding: 20px;
+  width: 90%;
+  max-width: 650px;
+  position: relative;
+}
+
+.warp-route-text p {
+  margin: 6px 0;
+  font-size: 14px;
+}
+
+.galactic-map {
+  margin-top: 15px;
+  border: 1px solid #333;
+  padding: 10px;
+  background: radial-gradient(#0d0d0d, #000);
+  text-align: center;
+}
+
+.galactic-map img {
+  max-width: 100%;
+  opacity: 0.8;
+  filter: contrast(1.1) brightness(1.2);
+}
+
+.modal-footer {
+  margin-top: 20px;
+  text-align: right;
+}
+
+.modal-footer .btn {
+  margin-left: 10px;
+}
+
+.modal {
+  position: fixed;
+  z-index: 9999;
+  left: 0; top: 0; width: 100%; height: 100%;
+  background-color: rgba(0,0,0,0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.modal-content {
+  background: #111;
+  padding: 2rem;
+  border-radius: 10px;
+  max-width: 90%;
+  max-height: 80%;
+  overflow-y: auto;
+}
+.modal .close {
+  position: absolute;
+  top: 10px; right: 20px;
+  font-size: 2rem;
+  color: #888;
+  cursor: pointer;
+}
+
+#warpConfirmModal {
+  display: none;
+}
+
+#logisticsTabs {
+  display: flex;
+  width: 100%;
+}
+
+#logisticsTabs .nav-item {
+  flex: 1;
+  text-align: center;
+}
+
+#logisticsTabs .nav-link {
+  width: 100%;
+  border-radius: 10;
+}
+
+#loadingOverlay {
+  transition: opacity 0.5s ease;
+}
+
+#loadingOverlay.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#warpModal {
+  display: none;
+}
+
+
+
+
+
+
 
 
 pre {

@@ -1,3 +1,11 @@
+let warpFuelCostTotal = 0;
+let warpAbortLogged = false;
+let isWarping = false;
+let tradeTimestamps = [];
+let warpAborted = false;
+
+
+
 let gamePaused = false;
 let gameStartTime = null;
 let lastPrices = {};
@@ -6,17 +14,17 @@ let marketViewMode = "all";
 let systems = {};
 let player = {
   location: "Sol",
-  credits: 10000,
-  fuel: 500,
+  credits: 900,
+  fuel: 225,
   inventory: {},
   vault: {},
   shipments: [],
 };
 
+
 const recentPlayerBuys = {}; // Format: { "Sol-Iron": timestamp }
 const TRADE_COOLDOWN = 10000; // 10 seconds cooldown to prevent resell exploits
-
-
+const TARIFF_CACHE_KEY = "atlasTariffCache";
 
 let corporations = {};
 window.activeContracts = [];
@@ -47,79 +55,78 @@ const RESOURCE_TYPES = [
 
 const RESOURCE_DATA = {
   Iron: {
-    base: 45,          // Abundant structural metal
+    base: 45, // Abundant structural metal
     volatility: 0.01,
   },
   Helium: {
-    base: 22,          // Inert gas, lightweight transport cost
+    base: 22, // Inert gas, lightweight transport cost
     volatility: 0.04,
   },
   Gold: {
-    base: 950,         // High value, low market flux
+    base: 950, // High value, low market flux
     volatility: 0.01,
   },
   Water: {
-    base: 60,          // Scarce and essential off-Earth
+    base: 60, // Scarce and essential off-Earth
     volatility: 0.03,
   },
   Uranium: {
-    base: 1200,        // Rare, regulated, high-value
+    base: 1200, // Rare, regulated, high-value
     volatility: 0.02,
   },
   Copper: {
-    base: 80,          // Used in electronics, moderate value
+    base: 80, // Used in electronics, moderate value
     volatility: 0.02,
   },
   Silicon: {
-    base: 65,          // Semiconductor basis, moderate use
+    base: 65, // Semiconductor basis, moderate use
     volatility: 0.025,
   },
   Titanium: {
-    base: 300,         // Strong alloy metal
+    base: 300, // Strong alloy metal
     volatility: 0.02,
   },
   Hydrogen: {
-    base: 35,          // Fuel-grade gas
+    base: 35, // Fuel-grade gas
     volatility: 0.05,
   },
   Carbon: {
-    base: 28,          // Versatile industrial use
+    base: 28, // Versatile industrial use
     volatility: 0.03,
   },
   Platinum: {
-    base: 850,         // Precious catalyst metal
+    base: 850, // Precious catalyst metal
     volatility: 0.015,
   },
   Nickel: {
-    base: 55,          // Industrial metal
+    base: 55, // Industrial metal
     volatility: 0.02,
   },
   Oxygen: {
-    base: 75,          // Life support, very valuable in space
+    base: 75, // Life support, very valuable in space
     volatility: 0.035,
   },
   Neon: {
-    base: 18,          // Rare noble gas
+    base: 18, // Rare noble gas
     volatility: 0.05,
   },
   Cobalt: {
-    base: 120,         // High-tech material
+    base: 120, // High-tech material
     volatility: 0.035,
   },
   Lithium: {
-    base: 140,         // Battery essential, volatile demand
+    base: 140, // Battery essential, volatile demand
     volatility: 0.05,
   },
   Iridium: {
-    base: 1100,        // Very rare, top-tier catalyst
+    base: 1100, // Very rare, top-tier catalyst
     volatility: 0.015,
   },
   Fuel: {
-    base: 90,          // Critical to operations, regulated
+    base: 90, // Critical to operations, regulated
     volatility: 0.03,
   },
 };
-
 
 const SYSTEM_NAMES = [
   // Real systems
@@ -139,6 +146,163 @@ const SYSTEM_NAMES = [
   "Ross 128",
   "Beta Pictoris",
 ];
+
+const SPECIALIZATION_EFFECTS = {
+  "Metals": ["Iron", "Copper", "Nickel", "Cobalt", "Titanium"],
+  "Precious Metals": ["Gold", "Platinum", "Iridium"],
+  "Fuel": ["Fuel", "Hydrogen", "Helium", "Uranium"],
+  "Gases": ["Helium", "Neon", "Hydrogen", "Oxygen"],
+  "Ice": ["Water", "Oxygen"],
+  "Organics": ["Carbon", "Silicon", "Oxygen"],
+  "Rare Earths": ["Lithium", "Uranium", "Iridium"],
+};
+
+const SYSTEM_SPECIALIZATIONS = {
+  "Sol": ["Organics", "Metals", "Ice"],
+  "Alpha Centauri": ["Metals", "Fuel"],
+  "Proxima Centauri": ["Rare Earths", "Ice"],
+  "Barnard's Star": ["Ice", "Gases"],
+  "Sirius": ["Fuel", "Metals"],
+  "Vega": ["Rare Earths", "Gases"],
+  "Tau Ceti": ["Organics", "Gases"],
+  "Epsilon Eridani": ["Fuel", "Metals"],
+  "TRAPPIST-1e": ["Organics", "Ice"],
+  "Kepler-452b": ["Rare Earths", "Organics"],
+  "Luyten's Star": ["Gases", "Ice"],
+  "Gliese 581": ["Fuel", "Rare Earths"],
+  "Wolf 359": ["Metals", "Gases"],
+  "Ross 128": ["Organics", "Metals"],
+  "Beta Pictoris": ["Fuel", "Ice", "Gases"]
+};
+
+
+
+const WARP_GRAPH = {
+  Sol: {
+    "Alpha Centauri": 12,
+    "Barnard's Star": 9,
+    "Lalande 21185": 15
+  },
+  "Alpha Centauri": {
+    Sol: 12,
+    "Proxima Centauri": 6,
+    "Tau Ceti": 10,
+    "Luhman 16": 14
+  },
+  "Proxima Centauri": {
+    "Alpha Centauri": 6,
+    "TRAPPIST-1e": 11,
+    "WISE 0855−0714": 18
+  },
+  "Barnard's Star": {
+    Sol: 9,
+    Sirius: 13,
+    "Lacaille 9352": 8
+  },
+  Sirius: {
+    "Barnard's Star": 13,
+    Vega: 10,
+    "Tau Ceti": 16,
+    Altair: 7
+  },
+  "Tau Ceti": {
+    "Alpha Centauri": 10,
+    Sirius: 16,
+    "Epsilon Eridani": 5,
+    "Delta Pavonis": 9
+  },
+  "Epsilon Eridani": {
+    "Tau Ceti": 5,
+    "Kepler-452b": 14,
+    "Lalande 21185": 8
+  },
+  "TRAPPIST-1e": {
+    "Proxima Centauri": 11,
+    "Gliese 581": 6,
+    "Kapteyn's Star": 13
+  },
+  "Kepler-452b": {
+    "Epsilon Eridani": 14,
+    "Beta Pictoris": 7,
+    "Ross 614": 10
+  },
+  Vega: {
+    Sirius: 10,
+    "Wolf 359": 6,
+    Altair: 5
+  },
+  "Wolf 359": {
+    Vega: 6,
+    "Ross 128": 4,
+    "Lacaille 9352": 7
+  },
+  "Ross 128": {
+    "Wolf 359": 4,
+    "Beta Pictoris": 8
+  },
+  "Beta Pictoris": {
+    "Ross 128": 8,
+    "Kepler-452b": 7,
+    Fomalhaut: 11
+  },
+  "Gliese 581": {
+    "TRAPPIST-1e": 6,
+    "Luyten's Star": 5,
+    "Kapteyn's Star": 12
+  },
+  "Luyten's Star": {
+    "Gliese 581": 5,
+    "EZ Aquarii": 9
+  },
+  "Kapteyn's Star": {
+    "TRAPPIST-1e": 13,
+    "Gliese 581": 12,
+    "Groombridge 34": 10
+  },
+  "Lalande 21185": {
+    Sol: 15,
+    "Epsilon Eridani": 8,
+    "Lacaille 9352": 6
+  },
+  "Lacaille 9352": {
+    "Barnard's Star": 8,
+    "Wolf 359": 7,
+    "Lalande 21185": 6,
+    "Ross 614": 5
+  },
+  "Ross 614": {
+    "Kepler-452b": 10,
+    "Lacaille 9352": 5,
+    "Groombridge 34": 8
+  },
+  Altair: {
+    Sirius: 7,
+    Vega: 5
+  },
+  Fomalhaut: {
+    "Beta Pictoris": 11,
+    "EZ Aquarii": 12
+  },
+  "EZ Aquarii": {
+    "Luyten's Star": 9,
+    Fomalhaut: 12
+  },
+  "Groombridge 34": {
+    "Kapteyn's Star": 10,
+    "Ross 614": 8
+  },
+  "WISE 0855−0714": {
+    "Proxima Centauri": 18
+  },
+  "Luhman 16": {
+    "Alpha Centauri": 14
+  },
+  "Delta Pavonis": {
+    "Tau Ceti": 9
+  }
+};
+
+
 
 const FUEL_CAPACITY = 500;
 const TRAVEL_FUEL_COST = 0;
@@ -204,6 +368,10 @@ const npcCorporations = [
   "Zorl'Nex Syndicate",
 ];
 
+function cleanNumber(num) {
+  return parseFloat(num.toFixed(2));  // rounds to 2 decimal places and removes trailing zeroes
+}
+
 function getTimeSeededPrice(system, resource) {
   const time = new Date();
   const minute = Math.floor(time.getUTCSeconds() / 10);
@@ -260,6 +428,23 @@ function populateCustomDropdown(listId, items, onClickHandler) {
   });
 }
 
+function createStyledInfoCard(message = "No data.", color = "#555") {
+  const li = document.createElement("li");
+  li.style.borderLeft = `4px solid ${color}`;
+  li.style.padding = "6px 10px";
+  li.style.backgroundColor = "#111";
+  li.style.margin = "0";
+  li.style.borderRadius = "4px";
+  li.style.listStyle = "none";
+
+  const inner = document.createElement("div");
+  inner.className = "d-flex justify-content-between";
+  inner.innerHTML = `<span class="text-muted small">${message}</span>`;
+
+  li.appendChild(inner);
+  return li;
+}
+
 function filterList(inputId, listId) {
   const input = document.getElementById(inputId).value.toLowerCase();
   const listItems = document.getElementById(listId).getElementsByTagName("li");
@@ -283,40 +468,84 @@ function hideDropdown(listId) {
   document.getElementById(listId).classList.add("d-none");
 }
 
+function getWarpPath(from, to) {
+  if (from === to) return [from];
+
+  const queue = [[from]];
+  const visited = new Set([from]);
+
+  while (queue.length > 0) {
+    const path = queue.shift();
+    const current = path[path.length - 1];
+
+    const neighbors = WARP_GRAPH[current];
+    if (!neighbors) continue;
+
+    for (const neighbor in neighbors) {
+      if (visited.has(neighbor)) continue;
+      const newPath = [...path, neighbor];
+      if (neighbor === to) return newPath;
+      queue.push(newPath);
+      visited.add(neighbor);
+    }
+  }
+
+  return null; // No path found
+}
+
+
 function calculateInitialTrends() {
-  const savedPriceData = JSON.parse(
-    localStorage.getItem("atlasPriceHistory") || "{}"
-  );
+  const savedPriceData = JSON.parse(localStorage.getItem("atlasPriceHistory") || "{}");
+  const historyStore = JSON.parse(localStorage.getItem("atlasPriceHistoryGraph") || "{}");
+
   SYSTEM_NAMES.forEach((system) => {
     RESOURCE_TYPES.forEach((res) => {
       const key = `${system}-${res}`;
       const currentPrice = getTimeSeededPrice(system, res);
-      const previousPrice = savedPriceData[key];
+
+      // Save to current data for trends
       let trend = "same";
+      const previousPrice = savedPriceData[key];
       if (previousPrice !== undefined) {
-        if (currentPrice > previousPrice) trend = "up";
-        else if (currentPrice < previousPrice) trend = "down";
+        trend = currentPrice > previousPrice ? "up" : currentPrice < previousPrice ? "down" : "same";
       }
-      // Save trend info
+
       lastPrices[key] = {
         price: currentPrice,
         trend,
         timestamp: Date.now(),
       };
-      // Set system prices for rendering
-      if (!systems[system])
-        systems[system] = {
-          name: system,
-          prices: {},
-        };
+
+      if (!systems[system]) systems[system] = { name: system, prices: {} };
       systems[system].prices[res] = currentPrice;
-      // Save current price for future comparisons
       savedPriceData[key] = currentPrice;
+
+      // 💾 Store historical point
+      historyStore[key] ||= [];
+      historyStore[key].push({ time: Date.now(), price: currentPrice });
     });
   });
-  // Save snapshot so next refresh works too
+
   localStorage.setItem("atlasPriceHistory", JSON.stringify(savedPriceData));
+  localStorage.setItem("atlasPriceHistoryGraph", JSON.stringify(historyStore));
 }
+
+function getFuelCostForPath(path) {
+  let fuel = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const from = path[i];
+    const to = path[i + 1];
+
+    // Create a deterministic seed
+    const hash = (from + "-" + to)
+      .split("")
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const jumpFuel = 40 + (hash % 21); // 40–60 range
+    fuel += jumpFuel;
+  }
+  return fuel;
+}
+
 
 function formatPrice(num) {
   return parseFloat(num).toFixed(2);
@@ -330,75 +559,28 @@ function getBuySellPrice(basePrice) {
   };
 }
 
-function showTradeSummary(type, res, amt, price) {
-  const total = price * amt;
-  // 🔥 Just auto-run the trade and log it
-  if (pendingTrade) {
-    pendingTrade();
-    pendingTrade = null;
-    // Optional: log summary instantly
-    const action = type === "buy" ? "Purchased" : "Sold";
-  }
-}
-
 function getRandomCorporation() {
   return npcCorporations[Math.floor(Math.random() * npcCorporations.length)];
 }
 
-function updateBuyBreakdown() {
-  const res = document.getElementById("buyResourceSelect").value;
-  const amt = parseInt(document.getElementById("buyAmount").value);
-  const div = document.getElementById("buyBreakdown");
-  const buyBtn = document.querySelector("button.btn-success");
-
-  const marketAvailable = systems[player.location]?.market?.[res];
-  if (!res || isNaN(amt) || amt <= 0 || !marketAvailable) {
-    div.innerHTML = !marketAvailable
-      ? "<span class='text-danger'> N/A</span>"
-      : "";
-    if (buyBtn) {
-      buyBtn.disabled = true;
-      buyBtn.innerText = !marketAvailable ? "Unavailable" : "Buy";
-    }
-    return;
-  }
-
-  const price = systems[player.location]?.prices?.[res] ?? 0;
-  const total = amt * price;
-
-  if (buyBtn) {
-    if (player.credits < total) {
-      buyBtn.disabled = true;
-      buyBtn.innerText = "Insufficient Credits";
-    } else {
-      buyBtn.disabled = false;
-      buyBtn.innerText = "Buy";
-    }
-  }
-
-  div.innerHTML = `<span style="color: #ff6666"> -${total.toFixed(2)}ᶜ</span>`;
+function getImportTax(system, unitPrice, amount) {
+  const rate = systems[system]?.tariffs?.importTaxRate || 0;
+  return unitPrice * amount * rate;
 }
 
-function updateSellBreakdown() {
-  const res = document.getElementById("sellResourceSelect").value;
-  const amt = parseInt(document.getElementById("sellAmount").value);
-  const div = document.getElementById("sellBreakdown");
+function getExportTax(system, unitPrice, amount) {
+  const rate = systems[system]?.tariffs?.exportTaxRate || 0;
+  return unitPrice * amount * rate;
+}
 
-  const lastBuyTime = recentPlayerBuys[`${player.location}-${res}`];
-  if (lastBuyTime && Date.now() - lastBuyTime < TRADE_COOLDOWN) {
-    sellBtn.disabled = true;
-    sellBtn.innerText = "Cooldown Active";
-  }
+function getBuyTotal(system, unitPrice, amount) {
+  const tax = getImportTax(system, unitPrice, amount);
+  return { tax, total: unitPrice * amount + tax };
+}
 
-  if (!res || isNaN(amt) || amt <= 0) {
-    div.innerHTML = "";
-    return;
-  }
-
-  const price = systems[player.location]?.prices?.[res] ?? 0;
-  const total = amt * price;
-
-  div.innerHTML = `<span style="color: #66ff66"> +${total.toFixed(2)}ᶜ</span>`;
+function getSellTotal(system, unitPrice, amount) {
+  const tax = getExportTax(system, unitPrice, amount);
+  return { tax, total: unitPrice * amount - tax };
 }
 
 function getRandomShipmentDelay() {
@@ -440,27 +622,14 @@ function initGame() {
   toggleTravelButton();
 
   // Set default amounts
-  document.getElementById("buyAmount").value = 1;
-  document.getElementById("sellAmount").value = 1;
+  document.getElementById("buyAmount").value = 10;
+  document.getElementById("sellAmount").value = 10;
 
   // Set default selected resource
   const firstRes = RESOURCE_TYPES[0];
   document.getElementById("buyResourceSelect").value = firstRes;
   document.getElementById("sellResourceSelect").value = firstRes;
 
-  // Attach event listeners
-  document
-    .getElementById("buyResourceSelect")
-    .addEventListener("change", updateBuyBreakdown);
-  document
-    .getElementById("buyAmount")
-    .addEventListener("input", updateBuyBreakdown);
-  document
-    .getElementById("sellResourceSelect")
-    .addEventListener("change", updateSellBreakdown);
-  document
-    .getElementById("sellAmount")
-    .addEventListener("input", updateSellBreakdown);
   document
     .getElementById("toggleMarketView")
     .addEventListener("click", toggleMarketView);
@@ -485,6 +654,7 @@ function initGame() {
   // Rebuild systems and markets
   const availabilityCache =
     JSON.parse(localStorage.getItem("atlasMarketAvailability")) || {};
+  const tariffCache = JSON.parse(localStorage.getItem(TARIFF_CACHE_KEY)) || {};
   const marketDataCache =
     JSON.parse(localStorage.getItem("atlasMarketData")) || {};
   const now = Date.now();
@@ -497,9 +667,24 @@ function initGame() {
       market: {},
     };
 
+    let importTaxRate, exportTaxRate;
+    const tariffEntry = tariffCache[name];
+    if (tariffEntry && now - tariffEntry.timestamp < oneHour) {
+      importTaxRate = tariffEntry.importTaxRate;
+      exportTaxRate = tariffEntry.exportTaxRate;
+    } else {
+      importTaxRate = Math.random() * 0.05;
+      exportTaxRate = Math.random() * 0.05;
+      tariffCache[name] = {
+        importTaxRate,
+        exportTaxRate,
+        timestamp: now,
+      };
+    }
+
     systems[name].tariffs = {
-      importTaxRate: Math.random() * 0.05,  // 0–5% import tax
-      exportTaxRate: Math.random() * 0.05,  // 0–5% export tax
+      importTaxRate,
+      exportTaxRate,
     };
 
     RESOURCE_TYPES.forEach((res) => {
@@ -549,13 +734,12 @@ function initGame() {
     JSON.stringify(availabilityCache)
   );
   localStorage.setItem("atlasMarketData", JSON.stringify(marketDataCache));
+  localStorage.setItem(TARIFF_CACHE_KEY, JSON.stringify(tariffCache));
 
   // Initialize UI
   calculateInitialTrends();
   populateSelectors();
   processAndRenderShipments();
-  updateBuyBreakdown();
-  updateSellBreakdown();
   updateUI();
 }
 
@@ -563,6 +747,9 @@ function renderTaxSidebar() {
   const tbody = document.getElementById("taxSidebarBody");
   if (!tbody) return;
   tbody.innerHTML = "";
+
+  const tariffCache =
+    JSON.parse(localStorage.getItem("atlasTariffCache")) || {};
 
   SYSTEM_NAMES.forEach((name) => {
     const { importTaxRate, exportTaxRate } = systems[name]?.tariffs || {
@@ -579,7 +766,6 @@ function renderTaxSidebar() {
     tbody.appendChild(tr);
   });
 }
-
 
 function updateGameAgeDisplay() {
   const el = document.getElementById("gameAge");
@@ -716,13 +902,12 @@ function resetGameState() {
   localStorage.removeItem("atlasPriceHistory");
   localStorage.removeItem("atlasMarketData"); // ⬅ add this!
   localStorage.removeItem("atlasMarketAvailability"); // ⬅ and this!
+  localStorage.removeItem("atlasSeenAbout");
   location.reload();
 }
 
 function populateSelectors() {
   const travelSelect = document.getElementById("travelSearch");
-  travelSelect.addEventListener("change", toggleTravelButton);
-
   const buySelect = document.getElementById("buyResourceSelect");
   const sellSelect = document.getElementById("sellResourceSelect");
 
@@ -734,7 +919,27 @@ function populateSelectors() {
       opt.textContent = system;
       travelSelect.appendChild(opt);
     });
-    travelSelect.value = player.location; // Default to current location
+    travelSelect.value = player.location;
+    toggleTravelButton();
+
+    // ✅ Attach warp route display here
+    travelSelect.addEventListener("change", () => {
+      const destination = travelSelect.value;
+      const travelBtn = document.getElementById("travelButton");
+      const path = getWarpPath(player.location, destination);
+
+      if (!path) {
+        travelBtn.disabled = true;
+        travelBtn.innerText = "No Route";
+      } else if (destination === player.location) {
+        travelBtn.disabled = true;
+        travelBtn.innerText = "N/A";
+      } else {
+        const hops = path.length - 1;
+        travelBtn.disabled = false;
+        travelBtn.innerText = `Warp (${hops} Jump${hops !== 1 ? "s" : ""})`;
+      }
+    });
   }
 
   if (buySelect && sellSelect) {
@@ -762,6 +967,7 @@ function updateMarket() {
       const oldPrice =
         systems[system].prices[res] ?? getTimeSeededPrice(system, res);
       const newPrice = getTimeSeededPrice(system, res);
+      let trend = "same";
       if (newPrice > oldPrice) trend = "up";
       else if (newPrice < oldPrice) trend = "down";
       // 🔥 Only update the trend if price changed
@@ -792,6 +998,7 @@ function updateMarket() {
     }
   });
   if (bestProfit > 0) {
+    
     logMarket(
       `Anonymous tip: Buy  ${bestResource}  at <span class="text-success">${bestLow.toFixed(
         2
@@ -802,10 +1009,28 @@ function updateMarket() {
       ).toFixed(2)}ᶜ</span>`
     );
   }
-  updateNewsTicker();
-  updateBuyBreakdown();
-  updateSellBreakdown();
+
   localStorage.setItem("atlasPriceHistory", JSON.stringify(savedPriceData));
+  const historyStore = JSON.parse(localStorage.getItem("atlasPriceHistoryGraph") || "{}");
+
+  RESOURCE_TYPES.forEach((res) => {
+    SYSTEM_NAMES.forEach((system) => {
+      const key = `${system}-${res}`;
+      const newPrice = systems[system].prices[res];
+      if (!newPrice) return;
+
+      historyStore[key] ||= [];
+      historyStore[key].push({ time: Date.now(), price: newPrice });
+
+      // Optional: cap history length
+      if (historyStore[key].length > 100) {
+        historyStore[key] = historyStore[key].slice(-100);
+      }
+    });
+  });
+
+  localStorage.setItem("atlasPriceHistoryGraph", JSON.stringify(historyStore));
+
   updateUI();
 }
 
@@ -816,21 +1041,24 @@ function toggleTravelButton() {
   if (selected === player.location) {
     btn.disabled = true;
     btn.innerText = "N/A";
-  } else if (player.fuel < TRAVEL_FUEL_COST) {
-    btn.disabled = true;
-    btn.innerText = "Insufficient Fuel";
   } else {
-    btn.disabled = false;
-    btn.innerText = "Warp";
+    const path = getWarpPath(player.location, selected);
+    if (!path) {
+      btn.disabled = true;
+      btn.innerText = "No Route";
+    } else {
+      const hops = path.length - 1;
+      const cost = hops * 10; // adjust if needed
+      btn.disabled = player.fuel < cost;
+      btn.innerText = `Warp (${hops} Jump${hops !== 1 ? "s" : ""})`;
+    }
   }
 }
 
+
 function logMarket(msg) {
   const logDiv = document.getElementById("marketLog");
-  if (!logDiv) {
-    console.warn("marketLog element not found");
-    return;
-  }
+  if (!logDiv) return;
 
   const entry = document.createElement("div");
   entry.className = "console-entry";
@@ -840,13 +1068,22 @@ function logMarket(msg) {
   time.textContent = `[${new Date().toLocaleTimeString()}]`;
 
   const content = document.createElement("span");
-  content.innerHTML = " " + msg; // Use innerHTML to render tags
+  content.innerHTML = " " + msg;
 
   entry.appendChild(time);
   entry.appendChild(content);
   logDiv.appendChild(entry);
+
+  // ✅ Keep only the last 50 messages
+  while (logDiv.children.length > 50) {
+    logDiv.removeChild(logDiv.firstChild);
+  }
+
   logDiv.scrollTop = logDiv.scrollHeight;
 }
+
+
+
 
 function simulateNpcBehavior() {
   Object.values(corporations).forEach((corp) => {
@@ -884,10 +1121,128 @@ function simulateNpcBehavior() {
   });
 }
 
+function handleNpcBuy(corp, system, res, amount, price, market, tariffs) {
+  const importTax = price * amount * tariffs.importTaxRate;
+  const totalCost = price * amount + importTax;
+
+  if (corp.credits >= totalCost) {
+    corp.credits -= totalCost;
+    market.demand += amount;
+
+    const delay = getRandomShipmentDelay();
+    corp.shipments.push({
+      resource: res,
+      amount,
+      price,
+      time: Date.now() + delay,
+    });
+    tradeTimestamps.push(Date.now());
+
+    logMarket(
+      `<span class="text-warning">${
+        corp.name
+      }</span> purchased ${amount}${UNIT} of ${res} in ${system} | ${price.toFixed(
+        2
+      )}ᶜ each (Tax: <span class="text-danger">${importTax.toFixed(
+        2
+      )}ᶜ</span>, Total: <span class="text-success">${totalCost.toFixed(
+        2
+      )}ᶜ</span>)`
+    );
+  }
+}
+
+function handleNpcSell(corp, system, res, amount, price, market, tariffs) {
+  const inventory = corp.inventory[res];
+  const totalQty = inventory.reduce((sum, [qty]) => sum + qty, 0);
+  const sellAmt = Math.min(totalQty, amount);
+
+  if (sellAmt > 0) {
+    const { sold, totalPaid } = processSellTransaction(inventory, sellAmt);
+    corp.inventory[res] = inventory.filter(([q]) => q > 0);
+
+    const { profitOrLoss, afterTaxRevenue } = calculateSellFinancials(
+      sold,
+      price,
+      totalPaid,
+      tariffs
+    );
+
+    if (profitOrLoss >= 0 || Math.random() < 0.4) {
+      completeSellTransaction(corp, market, sold, afterTaxRevenue);
+      logNpcSellTransaction(
+        corp,
+        system,
+        res,
+        sold,
+        price,
+        profitOrLoss,
+        tariffs.exportTaxRate
+      );
+    } else {
+      inventory.push([sold, totalPaid / sold]);
+    }
+  }
+}
+
+function processSellTransaction(inventory, sellAmt) {
+  let toSell = sellAmt;
+  let totalPaid = 0;
+  let sold = 0;
+
+  for (let i = 0; i < inventory.length && toSell > 0; i++) {
+    let [qty, buyPrice] = inventory[i];
+    const sellingQty = Math.min(qty, toSell);
+    totalPaid += sellingQty * buyPrice;
+    inventory[i][0] -= sellingQty;
+    toSell -= sellingQty;
+    sold += sellingQty;
+  }
+
+  return { sold, totalPaid };
+}
+
+function calculateSellFinancials(sold, price, totalPaid, tariffs) {
+  const totalRevenue = sold * price;
+  const exportTax = totalRevenue * tariffs.exportTaxRate;
+  const afterTaxRevenue = totalRevenue - exportTax;
+  const profitOrLoss = afterTaxRevenue - totalPaid;
+  return { profitOrLoss, afterTaxRevenue };
+}
+
+function completeSellTransaction(corp, market, sold, afterTaxRevenue) {
+  corp.credits += afterTaxRevenue;
+  market.supply += sold;
+}
+
+function logNpcSellTransaction(
+  corp,
+  system,
+  res,
+  sold,
+  price,
+  profitOrLoss,
+  exportTaxRate
+) {
+  const exportTax = sold * price * exportTaxRate;
+  const afterTax = sold * price - exportTax;
+  const profitColor = profitOrLoss >= 0 ? "text-success" : "text-danger";
+  const profitLabel = profitOrLoss >= 0 ? "Profit" : "Loss";
+
+  logMarket(
+    `<span class="text-warning">${corp.name}</span> sold ${sold}${UNIT} of ${res} in ${system} |
+    <span class="text-info">${price.toFixed(2)}ᶜ</span> each
+    (Tax: <span class="text-danger">${exportTax.toFixed(2)}ᶜ</span>,
+    <span class="${profitColor}">${profitLabel}: ${profitOrLoss.toFixed(2)}ᶜ</span>)`
+  );
+}
 
 function simulateNpcTradeAtLocation(corp) {
   const system = corp.location;
-  const tariffs = systems[system]?.tariffs || { importTaxRate: 0, exportTaxRate: 0 };
+  const tariffs = systems[system]?.tariffs || {
+    importTaxRate: 0,
+    exportTaxRate: 0,
+  };
   const res = RESOURCE_TYPES[Math.floor(Math.random() * RESOURCE_TYPES.length)];
 
   const market = systems[system]?.market?.[res];
@@ -899,72 +1254,9 @@ function simulateNpcTradeAtLocation(corp) {
   const amount = Math.floor(Math.random() * 200) + 50;
 
   if (type === "buy") {
-    const importTax = price * amount * tariffs.importTaxRate;
-    const totalCost = price * amount + importTax;
-
-    if (corp.credits >= totalCost) {
-      corp.credits -= totalCost;
-      market.demand += amount;
-
-      const delay = getRandomShipmentDelay();
-      corp.shipments.push({
-        resource: res,
-        amount,
-        price,
-        time: Date.now() + delay,
-      });
-
-      logMarket(
-        `<span class="text-warning">${corp.name}</span> purchased ${amount}${UNIT} of ${res} in ${system} |
-        <span class="text-info">${price.toFixed(2)}ᶜ</span> each
-        (Import Tax: <span class="text-danger">${importTax.toFixed(2)}ᶜ</span>,
-        Total Cost: <span class="text-success">${totalCost.toFixed(2)}ᶜ</span>)`
-      );
-    }
+    handleNpcBuy(corp, system, res, amount, price, market, tariffs);
   } else {
-    const inventory = corp.inventory[res];
-    const totalQty = inventory.reduce((sum, [qty]) => sum + qty, 0);
-    const sellAmt = Math.min(totalQty, amount);
-
-    if (sellAmt > 0) {
-      let toSell = sellAmt;
-      let totalPaid = 0;
-      let sold = 0;
-
-      for (let i = 0; i < inventory.length && toSell > 0; i++) {
-        let [qty, buyPrice] = inventory[i];
-        const sellingQty = Math.min(qty, toSell);
-        totalPaid += sellingQty * buyPrice;
-        inventory[i][0] -= sellingQty;
-        toSell -= sellingQty;
-        sold += sellingQty;
-      }
-      corp.inventory[res] = inventory.filter(([q]) => q > 0);
-
-      const totalRevenue = sold * price;
-      const exportTax = totalRevenue * tariffs.exportTaxRate;
-      const afterTaxRevenue = totalRevenue - exportTax;
-      const profitOrLoss = afterTaxRevenue - totalPaid;
-
-      const profitColor = profitOrLoss >= 0 ? "text-success" : "text-danger";
-      const profitLabel = profitOrLoss >= 0 ? "Profit" : "Loss";
-
-      // Allow selling at a loss 30% of the time
-      if (profitOrLoss >= 0 || Math.random() < 0.4) {
-        corp.credits += afterTaxRevenue;
-        market.supply += sold;
-
-        logMarket(
-          `<span class="text-warning">${corp.name}</span> sold ${sold}${UNIT} of ${res} in ${system} |
-          <span class="text-info">${price.toFixed(2)}ᶜ</span> each 
-          (Export Tax: <span class="text-danger">${exportTax.toFixed(2)}ᶜ</span>,
-          <span class="${profitColor}">${profitLabel}: ${profitOrLoss.toFixed(2)}ᶜ</span>)`
-        );
-      } else {
-        // Restore inventory if refusing loss
-        inventory.push([sold, totalPaid / sold]);
-      }
-    }
+    handleNpcSell(corp, system, res, amount, price, market, tariffs);
   }
 
   const ratio = market.demand / market.supply;
@@ -976,8 +1268,6 @@ function simulateNpcTradeAtLocation(corp) {
   flashMarketCell(system, res);
   setTimeout(updateUI, 300);
 }
-
-
 
 function sellAllOfResource(resource) {
   const inv = player.inventory[resource];
@@ -1038,6 +1328,7 @@ function sellAllOfResource(resource) {
       2
     )}ᶜ each (Total: ${revenue.toFixed(2)}ᶜ)`
   );
+  tradeTimestamps.push(Date.now());
 
   logMarket(
     `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> sold  ${soldQty}${UNIT} of ${resource}  |  <span class="text-info">${price.toFixed(
@@ -1052,43 +1343,59 @@ function sellAllOfResource(resource) {
 function sellAllMaterials() {
   let totalRevenue = 0;
   let soldItems = [];
+  const location = player.location;
+  const tariffs = systems[location]?.tariffs || { exportTaxRate: 0 };
+
   for (let resource in player.inventory) {
     const batches = player.inventory[resource];
+    if (!batches || batches.length === 0) continue;
+
     let quantity = 0;
-    batches.forEach(([qty]) => (quantity += qty));
-    const price = systems[player.location]?.prices[resource] || 0;
+    let totalPaid = 0;
+
+    batches.forEach(([qty, paid]) => {
+      quantity += qty;
+      totalPaid += qty * paid;
+    });
+
+    const price =
+      systems[location]?.prices[resource] || RESOURCE_DATA[resource]?.base || 0;
+    const exportTax = price * quantity * tariffs.exportTaxRate;
+    const revenue = price * quantity;
+    const afterTax = revenue - exportTax;
+    const profit = afterTax - totalPaid;
+    const profitColor = profit >= 0 ? "text-success" : "text-danger";
+    const profitLabel = profit >= 0 ? "Profit" : "Loss";
+
     if (quantity > 0 && price > 0) {
-      const revenue = quantity * price;
-      totalRevenue += revenue;
-      soldItems.push(`${quantity} ${resource}  |  ᶜ${price.toFixed(2)}`);
-      player.inventory[resource] = []; // Clear inventory for that resource
-      // 🧾 Add NPC-style market log per resource
+      player.inventory[resource] = []; // Clear inventory
+      totalRevenue += afterTax;
+
+      // 🧾 Add NPC-style log
+      tradeTimestamps.push(Date.now());
       logMarket(
-        `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> sold  ${quantity}${UNIT} of ${resource} in  ${
-          player.location
-        }   |  <span class="text-info">${price.toFixed(
-          2
-        )}ᶜ</span> each (Total Cost: <span class="text-success">${revenue.toFixed(
+        `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> sold ${quantity}${UNIT} of ${resource} in ${location} |
+        <span class="text-info">${price.toFixed(2)}ᶜ</span> each
+        (-Tax: <span class="text-danger">${exportTax.toFixed(2)}ᶜ</span>,
+        <span class="${profitColor}">${profitLabel}: ${profit.toFixed(
           2
         )}ᶜ</span>)`
       );
+
+      soldItems.push(`${quantity}${UNIT} ${resource}`);
     }
   }
+
   if (totalRevenue > 0) {
     player.credits += totalRevenue;
     log(
-      `Sold all materials for ᶜ${totalRevenue.toFixed(2)}: ${soldItems.join(
+      `Sold all materials for ${totalRevenue.toFixed(2)}ᶜ: ${soldItems.join(
         ", "
       )}`
     );
-    updateUI(); // Update tables, credits, inventory panel, etc.
+    updateUI();
   } else {
     log("No materials to sell.");
-    const consoleDiv = document.getElementById("console");
-    if (!consoleDiv) {
-      console.warn("Console element not found.");
-      return;
-    }
   }
 }
 
@@ -1106,18 +1413,32 @@ function log(msg) {
   const time = document.createElement("span");
   time.className = "console-timestamp";
   time.textContent = `[${new Date().toLocaleTimeString()}]`;
+
   const content = document.createElement("span");
-  if (msg.startsWith("Refueled")) content.style.color = "#ffffff";
-  else if (msg.startsWith("Sold")) content.style.color = "#ffffff";
-  else if (msg.startsWith("SHIP")) content.style.color = "#ffffff";
-  else if (msg.endsWith("y.")) content.style.color = "#ffffff";
-  else if (msg.startsWith("Not enough")) content.style.color = "#ff4444";
-  else if (msg.startsWith("Network")) content.style.color = "#ffa500";
-  else content.style.color = "#ffffff";
+  content.style.color = msg.startsWith("Sold")
+    ? "#ffffff"
+    : msg.startsWith("Refueled")
+    ? "#ffffff"
+    : msg.startsWith("SHIP")
+    ? "#ffffff"
+    : msg.endsWith("y.")
+    ? "#ffffff"
+    : msg.startsWith("Not enough")
+    ? "#ff4444"
+    : msg.startsWith("Network")
+    ? "#ffa500"
+    : "#ffffff";
   content.textContent = msg;
+
   entry.appendChild(time);
   entry.appendChild(content);
   consoleDiv.appendChild(entry);
+
+  // ✅ Keep only the last 50 messages
+  while (consoleDiv.children.length > 50) {
+    consoleDiv.removeChild(consoleDiv.firstChild);
+  }
+
   consoleDiv.scrollTop = consoleDiv.scrollHeight;
 }
 
@@ -1292,6 +1613,7 @@ function sellBatch(resource, price) {
       2
     )}ᶜ each (Total: ${revenue.toFixed(2)}ᶜ)`
   );
+  tradeTimestamps.push(Date.now());
 
   logMarket(
     `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> sold  ${soldQty}${UNIT} of ${resource}  |  <span class="text-info">${sellPrice.toFixed(
@@ -1305,13 +1627,7 @@ function sellBatch(resource, price) {
 function updateInventoryDisplay() {
   const container = document.getElementById("inventoryItemsContainer");
   container.innerHTML = "";
-  let hasItems = false;
-  if (!hasItems) {
-    const emptyMsg = document.createElement("div");
-    emptyMsg.className = "text-muted text-center";
-    emptyMsg.textContent = "";
-    container.appendChild(emptyMsg);
-  }
+
   let totalValue = 0;
   // First, calculate total value across all batches
   for (const res in player.inventory) {
@@ -1327,7 +1643,7 @@ function updateInventoryDisplay() {
   for (const res in player.inventory) {
     const batches = player.inventory[res];
     if (batches.length === 0) continue;
-    hasItems = true;
+
     const resDiv = document.createElement("div");
     resDiv.className = "resource-group";
     const resHeader = document.createElement("div");
@@ -1367,6 +1683,9 @@ function updateInventoryDisplay() {
         updateUI();
       };
 
+
+      
+
       const sellBtn = document.createElement("button");
       sellBtn.className = "sell-batch-btn";
       sellBtn.textContent = "Sell";
@@ -1380,6 +1699,7 @@ function updateInventoryDisplay() {
       };
 
       line.appendChild(infoSpan);
+
       line.appendChild(moveBtn);
       line.appendChild(sellBtn);
       resDiv.appendChild(line);
@@ -1393,6 +1713,9 @@ function updateInventoryDisplay() {
     valueLine.innerHTML = `<span>Value:</span> ${resValue.toFixed(2)}ᶜ</span>`;
     resDiv.appendChild(valueLine);
     container.appendChild(resDiv);
+  }
+  if (container.children.length === 0) {
+    container.appendChild(createStyledInfoCard("No materials in inventory."));
   }
 }
 
@@ -1415,22 +1738,37 @@ function togglePanel(id) {
 
 function moveBatch(resource, price, qty, from, to) {
   const source = player[from][resource];
-  const target = player[to][resource];
-
   let moved = 0;
   for (let i = 0; i < source.length && moved < qty; i++) {
     let [q, p] = source[i];
     if (p === price) {
       const take = Math.min(q, qty - moved);
       source[i][0] -= take;
-      target.push([take, p]);
       moved += take;
     }
   }
-
-  // Clean up empty entries
+  // Clean up empty batches
   player[from][resource] = source.filter(([q]) => q > 0);
+
+  // Schedule delayed internal shipment
+  const transferId = `XFER-${Date.now().toString().slice(-5)}`;
+  const deliveryTime = Date.now() + 30000; // 30 seconds
+
+  player.shipments.push({
+    id: transferId,
+    internal: true,
+    resource,
+    amount: moved,
+    price,
+    from,
+    to,
+    time: deliveryTime,
+  });
+
+  log(`${moved}${UNIT} of ${resource} is being moved to ${to}. ETA: 30s`);
+  updateUI();
 }
+
 
 function updateVaultDisplay() {
   const container = document.getElementById("vaultInventoryContent");
@@ -1439,14 +1777,14 @@ function updateVaultDisplay() {
     return;
   }
   container.innerHTML = "";
-  let hasItems = false;
-  let totalVaultValue = 0;
+
+  let hasItems = false; // ✅ Add this
 
   for (const res in player.vault) {
     const batches = player.vault[res];
     if (!batches || batches.length === 0) continue;
 
-    hasItems = true;
+    hasItems = true; // ✅ Set to true if at least one resource has items
 
     const resDiv = document.createElement("div");
     resDiv.className = "resource-group2";
@@ -1476,6 +1814,8 @@ function updateVaultDisplay() {
         2
       )}ᶜ`;
 
+
+      
       const moveBtn = document.createElement("button");
       moveBtn.className = "move-batch-btn2 btn-sm";
       moveBtn.textContent = "↩ Move to Inventory";
@@ -1485,17 +1825,17 @@ function updateVaultDisplay() {
       };
 
       line.appendChild(infoSpan);
+
       line.appendChild(moveBtn);
       resDiv.appendChild(line);
     });
 
     container.appendChild(resDiv);
   }
+
+  // ✅ Show "empty vault" message if no items found
   if (!hasItems) {
-    const emptyMsg = document.createElement("div");
-    emptyMsg.className = "text-muted text-center";
-    emptyMsg.textContent = "";
-    container.appendChild(emptyMsg);
+    container.appendChild(createStyledInfoCard("No materials in vault."));
   }
 }
 
@@ -1529,6 +1869,8 @@ function interpolateColor(startHex, endHex, factor) {
   return rgbToHex(result);
 }
 
+
+
 function processAndRenderShipments() {
   const now = Date.now();
   const shipmentsList = document.getElementById("shipments");
@@ -1538,17 +1880,21 @@ function processAndRenderShipments() {
   for (const s of player.shipments) {
     const timeRemaining = s.time - now;
     if (timeRemaining <= 0) {
-      // 🔧 Ensure the inventory slot exists
-      if (!player.inventory[s.resource]) {
-        player.inventory[s.resource] = [];
+      if (s.internal) {
+        if (!player[s.to][s.resource]) player[s.to][s.resource] = [];
+        player[s.to][s.resource].push([s.amount, s.price]);
+        log(`${s.amount}${UNIT} of ${s.resource} moved to ${s.to}.`);
+      } else {
+        if (!player.inventory[s.resource]) player.inventory[s.resource] = [];
+        player.inventory[s.resource].push([s.amount, s.price]);
+        log(`${s.amount}${UNIT} of ${s.resource} added to inventory.`);
       }
-      player.inventory[s.resource].push([s.amount, s.price]);
-      log(`${s.amount}ᵣ of ${s.resource} added to inventory.`);
       updated = true;
     } else {
-      remainingShipments.push(s);
+      remainingShipments.push(s); // ← this was missing!
     }
   }
+
 
   player.shipments = remainingShipments;
   const title = document.getElementById("shipmentsTitle");
@@ -1564,31 +1910,32 @@ function processAndRenderShipments() {
     .querySelector("#shipments")
     .closest("section");
   if (player.shipments.length === 0) {
-    shipmentsList.innerHTML = `<li>No incoming shipments.</li>`;
+    shipmentsList.innerHTML = `<li><span class="text-muted small">No incoming shipments.</span></li>`;
   } else {
     shipmentSection.style.display = "block";
     shipmentsList.innerHTML = topThree
-      .map((s) => {
-        const remaining = Math.max(0, Math.ceil((s.time - now) / 1000));
-        const totalTime =
-          Math.ceil((s.time - (s.createdAt || Date.now() - 60000)) / 1000) ||
-          60;
-        const progress = Math.min(1, Math.max(0, 1 - remaining / totalTime));
-        const hue = Math.floor(120 * progress); // 0 = red, 120 = green
-        const color = `hsl(${hue}, 90%, 50%)`;
+  .map((s) => {
+    const remaining = Math.max(0, Math.ceil((s.time - now) / 1000));
+    const hrs = Math.floor(remaining / 3600);
+    const mins = Math.floor((remaining % 3600) / 60);
+    const secs = remaining % 60;
+    const hms = `${hrs}h ${mins}m ${secs}s`;
+    const color = s.internal ? "#17a2b8" : "#ffc107"; // teal for internal, yellow for others
 
-        return `<li style="border-left: 6px solid ${color}; padding-left: 6px;">
-				<div class="d-flex justify-content-between">
-					<span class="text-muted small">${s.id}  | ETA:  ${remaining}s</span>
-				</div>
-				<div class="progress" style="height: 4px; margin-top: 2px;">
-					<div class="progress-bar" role="progressbar" style="width: ${(
-            progress * 100
-          ).toFixed(1)}%; background-color: ${color};"></div>
-				</div>
-			</li>`;
-      })
-      .join("");
+
+    const label = s.internal
+      ? `↔ ${s.amount}${UNIT} ${s.resource} (${s.from} → ${s.to})`
+      : `${s.id} | ${s.amount}${UNIT} ${s.resource}`;
+
+    return `<li style="border-left: 4px solid ${color}; padding-left: 6px;">
+      <div class="d-flex justify-content-between">
+        <span class="text-muted small">${label} | ETA: ${hms}</span>
+      </div>
+    </li>`;
+
+  })
+  .join("");
+
   }
   if (updated) {
     updateInventoryDisplay();
@@ -1596,29 +1943,305 @@ function processAndRenderShipments() {
   }
 }
 
+function countBatches(store) {
+  let count = 0;
+  for (const res in store) {
+    const batches = store[res];
+    count += batches.reduce((sum, [qty]) => sum + qty, 0);
+  }
+  return count;
+}
+
+function getUsageColor(current, max) {
+  const percent = current / max;
+  if (percent >= 0.95) return "#ff"; // 🔴 storage Critical
+  if (percent >= 0.75) return "#ff"; // 🟠 storage Warning
+  return "#ffffff"; // ⚪️ Safe
+}
+
+function updateStorageUsage() {
+  const invCount = countBatches(player.inventory);
+  const vaultCount = countBatches(player.vault);
+
+  const invSpan = document.getElementById("inventoryCount");
+  const vaultSpan = document.getElementById("vaultCount");
+
+  if (invSpan) {
+    invSpan.textContent = invCount;
+    invSpan.style.color = getUsageColor(invCount, 250);
+  }
+
+  if (vaultSpan) {
+    vaultSpan.textContent = vaultCount;
+    vaultSpan.style.color = getUsageColor(vaultCount, 25);
+  }
+}
+
 function updateUI() {
-  toggleTravelButton();
-  updateRefuelButton();
+  updateLocationUI();
+  updateCreditsUI();
+  updateFuelUI();
   updateInventoryDisplay();
   updateVaultDisplay();
+  updateStorageUsage();
   updateSellAllButton();
   updateSellButton();
-  document.getElementById("location").innerText = player.location;
-  document.getElementById("credits").innerText = player.credits.toFixed(2);
-  document.getElementById("fuel").innerText = player.fuel;
-  const marketTable = document.getElementById("marketTable");
+  updateMarketHeading();
+  updateMarketTable(); // big one: we'll optimize this next
+  updateSpreadTable();
+}
+
+function updateMarketTable() {
+  const table = document.getElementById("marketTable");
+  if (!table) return;
+
+  const frag = document.createDocumentFragment();
+
+  const minPrices = {};
+  const maxPrices = {};
+  RESOURCE_TYPES.forEach((res) => {
+    const prices = SYSTEM_NAMES.map(
+      (system) => systems[system].prices?.[res] ?? Infinity
+    );
+    minPrices[res] = Math.min(...prices);
+    maxPrices[res] = Math.max(...prices);
+  });
+
+  let visibleSystems = SYSTEM_NAMES;
+  if (marketViewMode === "current") {
+    visibleSystems = [player.location];
+  }
+
+  let rows = visibleSystems.map((system) => {
+    const systemData = systems[system];
+    const prices = {};
+    RESOURCE_TYPES.forEach((res) => {
+      prices[res] = systemData.prices?.[res];
+    });
+    return { system, prices };
+  });
+
+  if (sortState.column && sortState.column !== "System") {
+    const res = sortState.column;
+    rows.sort((a, b) => {
+      const aPrice = a.prices[res] ?? -Infinity;
+      const bPrice = b.prices[res] ?? -Infinity;
+      return sortState.ascending ? aPrice - bPrice : bPrice - aPrice;
+    });
+  } else if (sortState.column === "System") {
+    rows.sort((a, b) => {
+      return sortState.ascending
+        ? a.system.localeCompare(b.system)
+        : b.system.localeCompare(a.system);
+    });
+  }
+
+  // 🆕 Utility for fuzzy formatting
+  function formatEstimate(val, hops) {
+    if (hops <= 1) return val.toFixed(2);
+    if (hops === 2) return val.toFixed(1);
+    if (hops === 3) return Math.round(val).toString();
+    return `${Math.round(val / 10.34) * 10}`;
+  }
+
+  rows.forEach(({ system, prices }) => {
+    const systemData = systems[system];
+    const row = document.createElement("tr");
+    if (system === player.location) row.classList.add("current-system-row");
+
+    const nameCell = document.createElement("td");
+    nameCell.textContent = system;
+    row.appendChild(nameCell);
+
+    RESOURCE_TYPES.forEach((res) => {
+      const market = systemData.market?.[res];
+      const price = prices[res];
+
+      const cell = document.createElement("td");
+      cell.setAttribute("data-system", system);
+      cell.setAttribute("data-resource", res);
+
+      if (!market || price === undefined) {
+        cell.className = "text-muted text-center unavailable-cell";
+        cell.textContent = "N/A";
+      } else {
+        const trend = lastPrices[`${system}-${res}`]?.trend ?? "same";
+        const hops = getWarpPath(player.location, system)?.length - 1 || 0;
+
+        cell.className = `price-cell ${trend}`;
+        if (price === minPrices[res]) cell.classList.add("lowest-price-cell");
+        if (price === maxPrices[res]) cell.classList.add("highest-price-cell");
+
+        if (systems[system].specializations?.some(spec =>
+          SPECIALIZATION_EFFECTS[spec]?.includes(res)
+        )) {
+          cell.classList.add("specialized-cell");
+        }
+
+        cell.innerHTML = `
+          ${formatEstimate(price, hops)}
+          <span class="trend-indicator ${trend}"></span>
+          <div class="supply-demand-info">
+            <span>S: ${formatEstimate(market.supply, hops)}${UNIT}</span><br>
+            <span>D: ${formatEstimate(market.demand, hops)}${UNIT}</span>
+          </div>`;
+
+        cell.addEventListener("click", () => {
+          // optional detail popup or graph
+        });
+      }
+
+      row.appendChild(cell);
+    });
+
+    frag.appendChild(row);
+  });
+
+  table.innerHTML = "";
+  table.appendChild(frag);
+}
+
+
+
+function updateLocationUI() {
+  const el = document.getElementById("location");
+  if (el) el.textContent = player.location;
+}
+
+function updateCreditsUI() {
+  const el = document.getElementById("credits");
+  if (el) el.textContent = player.credits.toFixed(2);
+}
+
+function updateFuelUI() {
+  const el = document.getElementById("fuel");
+  if (el) el.textContent = player.fuel;
+}
+
+function updateMarketHeading() {
   const headingTable = document.getElementById("marketHeadingTable");
-  marketTable.innerHTML = "";
+  if (!headingTable) return;
+
   headingTable.innerHTML = "";
+
+  const headerRow = document.createElement("tr");
+
+  // First column: System
+  let sortIcon = "";
+  if (sortState.column === "System") {
+    sortIcon = sortState.ascending ? " ↑" : " ↓";
+  }
+  headerRow.innerHTML = `<th onclick="sortBy('System')">System${sortIcon}</th>`;
+
+  // Resource columns
+  RESOURCE_TYPES.forEach((res) => {
+    let icon = "";
+    if (sortState.column === res) {
+      icon = sortState.ascending ? " ↑" : " ↓";
+    }
+    const th = document.createElement("th");
+    th.innerHTML = `${res}${icon}`;
+    th.onclick = () => sortBy(res);
+    headerRow.appendChild(th);
+  });
+
+  headingTable.appendChild(headerRow);
+}
+
+function beginWarpStep(hopIndex) {
+  if (!warpTargetPath || hopIndex >= warpTargetPath.length || warpAborted) return;
+
+  const from = warpTargetPath[hopIndex - 1];
+  const to = warpTargetPath[hopIndex];
+  const travelTime = Math.floor(Math.random() * 2000) + 3000;
+
+  const segmentFuelCost = WARP_GRAPH[from]?.[to] || 0;
+  if (player.fuel < segmentFuelCost) {
+    log(`Warp to ${to} failed: Insufficient fuel.`);
+    return;
+  }
+
+
+  isWarping = true;
+
+  const overlay = document.getElementById("warp-overlay");
+  const route = document.getElementById("warp-route");
+  const timer = document.getElementById("warp-timer");
+  const progressBar = document.getElementById("warp-progress-bar");
+
+  const totalHops = warpTargetPath.length - 1;
+  const percent = Math.floor(((hopIndex - 1) / totalHops) * 100);
+  progressBar.style.width = `${percent}%`;
+  progressBar.textContent = `${percent}%`;
+  progressBar.setAttribute("aria-valuenow", percent);
+
+  if (overlay.classList.contains("d-none")) {
+    overlay.classList.remove("d-none");
+    disableTradeControls(true);
+  }
+
+  route.textContent = `Warping: ${from} → ${to} (${segmentFuelCost}) — Step ${hopIndex} of ${totalHops}`;
+  log(`Initiating warp to ${to}...`);
+
+  setTimeout(() => {
+
+    if (warpAborted) {
+      if (!warpAbortLogged) {
+        log(`Warp aborted mid-route. Holding at ${player.location}.`);
+        warpAbortLogged = true;
+      }
+      overlay.classList.add("d-none");
+      disableTradeControls(false);
+      isWarping = false;
+      return;
+    }
+
+    player.location = to;
+    player.fuel -= segmentFuelCost;
+    flash("fuel");
+    log(`Arrived at ${to}. Remaining fuel: ${player.fuel}ᶜ`);
+    updateUI();
+
+    if (to === warpFinalDest) {
+      progressBar.style.width = "100%";
+      progressBar.textContent = "100%";
+      progressBar.setAttribute("aria-valuenow", "100");
+
+      setTimeout(() => {
+        overlay.classList.add("d-none");
+        disableTradeControls(false);
+        log("Warp complete.");
+        toggleTravelButton();
+        isWarping = false;
+      }, 1000);
+    } else {
+      beginWarpStep(hopIndex + 1);
+    }
+  }, travelTime);
+}
+
+
+
+function updateSpreadTable() {
+  const spreadTable = document.getElementById("spreadTable");
+  if (!spreadTable) return;
+
   const resourceMin = {},
     resourceMax = {};
   RESOURCE_TYPES.forEach((res) => {
-    const prices = SYSTEM_NAMES.map((system) => systems[system].prices[res]);
+    const prices = SYSTEM_NAMES.map(
+      (system) => systems[system].prices?.[res] ?? Infinity
+    );
     resourceMin[res] = Math.min(...prices);
     resourceMax[res] = Math.max(...prices);
   });
+
+  const row = document.createElement("tr");
+  row.innerHTML = `<th class="text-muted small text-center resource-name">DΞLTΛ</th>`;
+
   let highestSpread = 0;
   let highestResource = "";
+
   RESOURCE_TYPES.forEach((res) => {
     const spread = resourceMax[res] - resourceMin[res];
     if (spread > highestSpread) {
@@ -1626,84 +2249,19 @@ function updateUI() {
       highestResource = res;
     }
   });
-  // 🧭 Main Header Row
-  const headerRow = document.createElement("tr");
-  headerRow.innerHTML =
-    `<th onclick="sortBy('System')">System${
-      sortState.column === "System" ? (sortState.ascending ? " ↑" : " ↓") : ""
-    }</th>` +
-    RESOURCE_TYPES.map((res) => {
-      const isSorted = sortState.column === res;
-      const icon = isSorted ? (sortState.ascending ? " ↑" : " ↓") : "";
-      return `<th onclick="sortBy('${res}')">${res}${icon}</th>`;
-    }).join("");
-  headingTable.appendChild(headerRow);
-  // 📦 Data rows
-  let systemsToRender =
-    marketViewMode === "current" ? [player.location] : [...SYSTEM_NAMES];
-  // 🔝 Move player's current system to the top
-  if (marketViewMode !== "current") {
-    systemsToRender = systemsToRender.filter((s) => s !== player.location);
-    systemsToRender.unshift(player.location);
-  }
-  if (sortState.column) {
-    const isSystem = sortState.column === "System";
-    systemsToRender.sort((a, b) => {
-      const valA = isSystem ? a : systems[a].prices[sortState.column];
-      const valB = isSystem ? b : systems[b].prices[sortState.column];
-      return sortState.ascending ? valA - valB : valB - valA;
-    });
-  }
-  systemsToRender.forEach((system) => {
-    const row = document.createElement("tr");
-    if (system === player.location) row.classList.add("current-system-row");
-    row.innerHTML = `<td>${system}</td>`;
-    RESOURCE_TYPES.forEach((res) => {
-      const market = systems[system].market?.[res];
-      if (!market) {
-        row.innerHTML += `<td class="text-muted text-center unavailable-cell">N/A</td>`;
-        return;
-      }
-      const price = systems[system].prices[res];
-      const isMax = price === resourceMax[res];
-      const isMin = price === resourceMin[res];
-      const trend = lastPrices[`${system}-${res}`]?.trend ?? "same";
-      const supplyDemand = `
-      <div class="supply-demand-info">
-        <span> S:  ${market.supply}${UNIT}</span><br>
-        <span> D:  ${market.demand}${UNIT}</span>
-      </div>`;
-      row.innerHTML += `
-          <td class="${
-            isMax ? "high-price" : isMin ? "low-price" : ""
-          } price-cell">
-            ${price.toFixed(2)}
-            <span class="trend-indicator ${trend}"></span>
-            ${supplyDemand}
-          </td>`;
-    });
-    marketTable.appendChild(row);
+
+  RESOURCE_TYPES.forEach((res) => {
+    const spread = (resourceMax[res] - resourceMin[res]).toFixed(2);
+    const highlight = res === highestResource ? "highest-spread" : "";
+    row.innerHTML += `<th class="${highlight} small text-center">${spread} Δ</th>`;
   });
-  // 🔽 Spread row BELOW market table (in its own table)
-  spreadTable.innerHTML = ""; // clear old spread rows
-  const bottomSpreadRow = document.createElement("tr");
-  bottomSpreadRow.innerHTML =
-    `<th class="text-muted text-center small text-start"> DΞLTΛ</th>` +
-    RESOURCE_TYPES.map((res) => {
-      const diff = (resourceMax[res] - resourceMin[res]).toFixed(2);
-      const highlightClass = res === highestResource ? "highest-spread" : "";
-      return `<th class="${highlightClass} small text-center" title="High: ${resourceMax[
-        res
-      ].toFixed(2)}Δ, Low: ${resourceMin[res].toFixed(2)}Δ">
-            ${diff} Δ
-          </th>`;
-    }).join("");
-  spreadTable.appendChild(bottomSpreadRow);
+
+  spreadTable.innerHTML = "";
+  spreadTable.appendChild(row);
 }
 
 function updateSellButton() {
   const res = document.getElementById("sellResourceSelect").value;
-  const amtInput = document.getElementById("sellAmount");
   const sellBtn = document.querySelector("button.btn-danger"); // assuming this is the Sell button
 
   if (!sellBtn || !res) return;
@@ -1721,8 +2279,8 @@ function toggleMarketView() {
 
   btn.innerHTML =
     marketViewMode === "all"
-      ? '<i class="fa fa-toggle-on" aria-hidden="true"></i> | Current System'
-      : '<i class="fa fa-toggle-off" aria-hidden="true"></i> | All Systems';
+      ? '<i class="fa fa-toggle-on" aria-hidden="true"></i> | Show Only Current System'
+      : '<i class="fa fa-toggle-off" aria-hidden="true"></i> | Show All Systems';
 
   updateUI();
 }
@@ -1733,42 +2291,72 @@ function sortBy(col) {
   updateUI();
 }
 
-function travel() {
-  const dest = document.getElementById("travelSearch").value;
-  const travelBtn = document.getElementById("travelButton");
-  const warpOverlay = document.getElementById("warp-overlay");
-  const warpTimer = document.getElementById("warp-timer");
-  const warpRoute = document.getElementById("warp-route");
-  if (dest === player.location) return;
-  const travelCost = Math.floor(Math.random() * 11) + 5; // 5 to 15 fuel
-  if (player.fuel < travelCost)
-    return log(`Not enough fuel. Need ${travelCost}ᵣ.`);
+let warpTargetPath = [];
+let warpFinalDest = null;
 
-  const delay = Math.floor(Math.random() * 2000) + 3000;
-  let secondsLeft = Math.ceil(delay / 1000);
-  // Set warp message
-  warpRoute.textContent = `Warping from ${player.location} to ${dest}`;
-  warpTimer.textContent = `~eta ${secondsLeft}s`;
-  log(`Warping to ${dest}... ~eta ${secondsLeft}s`);
-  travelBtn.disabled = true;
-  disableTradeControls(true);
-  warpOverlay.classList.remove("d-none");
-  const interval = setInterval(() => {
-    secondsLeft--;
-    warpTimer.textContent = `~eta ${secondsLeft}s`;
-    if (secondsLeft <= 0) clearInterval(interval);
-  }, 1000);
-  setTimeout(() => {
-    player.location = dest;
-    player.fuel -= travelCost;
-    flash("fuel");
-    log(`Arrived at ${dest}`);
-    log(`Used ${travelCost}ᵣ to warp.`);
-    updateUI();
-    warpOverlay.classList.add("d-none");
-    travelBtn.disabled = false;
-    disableTradeControls(false);
-  }, delay);
+function travel() {
+  const selectedSystem = document.getElementById("travelSearch").value;
+  if (!selectedSystem || selectedSystem === player.location) return;
+
+  const route = getWarpPath(player.location, selectedSystem);
+  if (!route || route.length === 0) return;
+
+  warpTargetPath = route;
+  warpFinalDest = selectedSystem;
+
+  const hops = route.length - 1;
+  const fuelCost = getFuelCostForPath(route);
+
+  // 🛰️ Update all modal fields
+  document.getElementById("warpRouteDisplay").textContent = `From: ${player.location} To: ${selectedSystem}`;
+  document.getElementById("warpFullPath").textContent = route.join(" ➜ ");
+  document.getElementById("warpHopCount").textContent = hops;
+  document.getElementById("warpFuelEstimate").textContent = fuelCost;
+
+  // Show the warp confirmation modal
+  document.getElementById("warpModal").style.display = "block";
+}
+
+
+
+
+
+
+function confirmWarp() {
+  if (!warpTargetPath || warpTargetPath.length === 0) return;
+
+  document.getElementById("warpModal").style.display = "none";
+
+  // ✅ Show overlay ONCE at the start of the full warp
+  const overlay = document.getElementById("warp-overlay");
+  overlay.classList.remove("d-none");
+
+  const progressBar = document.getElementById("warp-progress-bar");
+  progressBar.style.width = "0%";
+  progressBar.textContent = "0%";
+  progressBar.setAttribute("aria-valuenow", "0");
+  warpAborted = false;
+  disableTradeControls(true); // Disable trading during warp
+  
+  beginWarpStep(1); // Start from the first hop
+}
+
+
+
+function cancelWarp() {
+  document.getElementById("warpModal").style.display = "none";
+  log("Warp cancelled.");
+}
+
+function abortWarp() {
+  warpAborted = true;
+  warpAbortLogged = false; // Reset so `beginWarpStep` can log it once
+}
+
+
+
+function closeWarpModal() {
+  document.getElementById("warpModal").style.display = "none";
 }
 
 function disableTradeControls(disabled) {
@@ -1837,7 +2425,7 @@ function buyMaterial() {
 
   const systemMarket = systems[player.location].market[res];
   if (!systemMarket)
-    return log(`${res} is not available in ${player.location}.`);
+    return log(`${res} is not currently available in ${player.location}.`);
 
   const basePrice = systems[player.location].prices[res];
   const { buyPrice } = getBuySellPrice(basePrice);
@@ -1885,42 +2473,58 @@ function buyMaterial() {
 
   // ✅ Run it
   showTradeSummary("buy", res, amt, buyPrice);
-  updateBuyBreakdown();
 }
 
 function showTradeSummary(type, res, amt, price) {
   const location = player.location;
-  const tariffs = systems[location]?.tariffs || { importTaxRate: 0, exportTaxRate: 0 };
+  const tariffs = systems[location]?.tariffs || {
+    importTaxRate: 0,
+    exportTaxRate: 0,
+  };
 
   const baseTotal = price * amt;
-  const taxRate = type === "buy" ? tariffs.importTaxRate : tariffs.exportTaxRate;
+  const taxRate =
+    type === "buy" ? tariffs.importTaxRate : tariffs.exportTaxRate;
   const taxAmount = baseTotal * taxRate;
-  const finalTotal = type === "buy" ? baseTotal + taxAmount : baseTotal - taxAmount;
-
+  const finalTotal =
+    type === "buy" ? baseTotal + taxAmount : baseTotal - taxAmount;
+  
   if (pendingTrade) {
     pendingTrade();
     pendingTrade = null;
     saveGameState();
-
+  
     const action = type === "buy" ? "Purchased" : "Sold";
-    const taxLabel = type === "buy" ? "Tax" : "Tax";
-
-    log(
-      `${action} ${amt}${UNIT} of ${res} at ${price.toFixed(2)}ᶜ each ` +
-      `(${taxLabel}: ${taxAmount.toFixed(2)}ᶜ, Total: ${finalTotal.toFixed(2)}ᶜ)`
-    );
-
+    const taxLabel = "Tax";
+  
+    log(`${action} ${amt}${UNIT} of ${res} at ${price.toFixed(2)}ᶜ each (${taxLabel}: ${taxAmount.toFixed(2)}ᶜ)`);
+  
+    tradeTimestamps.push(Date.now());
+  
+    let profitLossStr = "";
+    if (type === "sell") {
+      const inv = player.inventory[res];
+      const matched = inv.slice(0, amt);
+      const totalPaid = matched.reduce((sum, [qty, paid]) => sum + qty * paid, 0);
+      const profit = finalTotal - totalPaid;
+      const profitColor = profit >= 0 ? "text-success" : "text-danger";
+      const profitLabel = profit >= 0 ? "Profit" : "Loss";
+      profitLossStr = `<span class="${profitColor}">${profitLabel}: ${profit.toFixed(2)}ᶜ</span>`;
+    } else {
+      profitLossStr = `<span class="text-success">Total: ${finalTotal.toFixed(2)}ᶜ</span>`;
+    }
+  
     logMarket(
-      `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> ${type === "buy" ? "purchased" : "sold"} 
-      ${amt}${UNIT} of ${res} in ${location} | 
-      <span class="text-info">${price.toFixed(2)}ᶜ</span> each 
-      (${taxLabel}: <span class="text-danger">${taxAmount.toFixed(2)}ᶜ</span>, 
-      <span class="text-success">Total: ${finalTotal.toFixed(2)}ᶜ</span>)`
+      `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> ${
+        type === "buy" ? "purchased" : "sold"
+      } ${amt}${UNIT} of ${res} in ${location} |
+      ${price.toFixed(2)}ᶜ each (Tax: <span class="text-danger">${taxAmount.toFixed(
+        2
+      )}ᶜ</span>, ${profitLossStr})`
     );
   }
 }
-
-
+    
 
 
 
@@ -1931,7 +2535,7 @@ function sellMaterial() {
 
   let market = systems[player.location].market[res];
   const priceExists = systems[player.location].prices?.[res];
-  let price = priceExists ?? RESOURCE_DATA[res].base;
+  let price = systems[player.location].prices?.[res] ?? RESOURCE_DATA[res].base;
 
   // 🚀 If resource is unavailable, create market on-the-fly
   if (!market) {
@@ -1974,8 +2578,12 @@ function sellMaterial() {
 
   const lastBuyTime = recentPlayerBuys[`${player.location}-${res}`];
   if (lastBuyTime && Date.now() - lastBuyTime < TRADE_COOLDOWN) {
-    const wait = Math.ceil((TRADE_COOLDOWN - (Date.now() - lastBuyTime)) / 1000);
-    return log(`Reselling ${res} in ${player.location} is restricted. Wait ${wait}s.`);
+    const wait = Math.ceil(
+      (TRADE_COOLDOWN - (Date.now() - lastBuyTime)) / 1000
+    );
+    return log(
+      `${res} trading in ${player.location} is temporarily restricted. Wait ${wait}s.`
+    );
   }
 
   pendingTrade = () => {
@@ -1996,20 +2604,6 @@ function sellMaterial() {
     const revenue = sold * price;
     player.credits += revenue;
     flash("credits");
-
-    const profit = revenue - totalPaid;
-    const profitLabel = profit >= 0 ? "Profit" : "Loss";
-    const profitColor = profit >= 0 ? "text-success" : "text-danger";
-
-    logMarket(
-      `<span class="text-warning">ΛTLΛS | ΞQUINOX™</span> sold ${sold}${UNIT} of ${res} in ${
-        player.location
-      } | <span class="text-info">${price.toFixed(
-        2
-      )}ᶜ</span> each (<span class="${profitColor}">${profitLabel}: ${profit.toFixed(
-        2
-      )}ᶜ</span>)`
-    );
 
     // Add supply and adjust price if market was created or already existed
     market.supply += sold;
@@ -2047,9 +2641,6 @@ function renderTariffModal() {
   });
 }
 
-
-
-
 let lastTick = Date.now();
 let tickCounter = 0;
 let saveCounter = 0;
@@ -2057,20 +2648,22 @@ let npcTradeCounter = 0;
 
 function tick() {
   const now = Date.now();
-  const delta = now - lastTick;
   lastTick = now;
   tickCounter++;
   // Process shipments
   processAndRenderShipments();
   processNpcShipments();
   updateGameAgeDisplay();
-  renderContracts();
-  checkContracts();
-  tryFulfillContracts();
+  renderAvailableContracts();
+  checkContractTimers();
+  renderActiveContracts();  // Optional, if you just want to update UI
+// OR
+  checkContractTimers();    // If you're checking for expiry
+  // OR
 
-  // Simulate NPCs every 3 seconds
+
+
   if (now - npcLastTick >= 1000) {
-    simulateNpcBehavior();
     for (let i = 0; i < 2; i++) {
       simulateNpcBehavior();
     }
@@ -2079,11 +2672,11 @@ function tick() {
 
   setInterval(() => {
     renderActiveContracts();
-    checkContracts(); // to expire them
+    checkContractTimers(); // to expire them
   }, 1000);
 
   // Save every 60 seconds
-  if (now - lastSaveTick >= 60000) {
+  if (now - lastSaveTick >= 120000) {
     saveGameState(true);
     lastSaveTick = now;
   }
@@ -2093,12 +2686,82 @@ function tick() {
 let npcLastTick = Date.now();
 let lastSaveTick = Date.now();
 
+function hideLoadingOverlay() {
+  const overlay = document.getElementById("loadingOverlay");
+  overlay.classList.add("hide");
+  setTimeout(() => (overlay.style.display = "none"), 800); // allow fade-out
+}
+
+function getTradesLastMinute() {
+  const now = Date.now();
+  const oneMinuteAgo = now - 60000;
+  tradeTimestamps = tradeTimestamps.filter(ts => ts > oneMinuteAgo);
+  return tradeTimestamps.length;
+}
+
+function applySystemSpecializations(systemName) {
+  const system = systems[systemName];
+  const market = system.market;
+  const specializations = system.specializations || [];
+
+  for (const resource in market) {
+    if (market[resource] == null) continue;
+
+    let price = market[resource].basePrice;
+    let isSpecialized = specializations.some(spec =>
+      SPECIALIZATION_EFFECTS[spec]?.includes(resource)
+    );
+    if (isSpecialized) {
+      market[resource].price = price * 0.85;
+      market[resource].supply *= 1.2;
+      market[resource].demand *= 0.9;
+    } else {
+      market[resource].price = price * 1.05;
+      market[resource].supply *= 0.9;
+      market[resource].demand *= 1.1;
+    }
+
+
+  }
+}
+
+
+
 window.onload = function () {
+
   initGame();
+
+  for (const name of SYSTEM_NAMES) {
+    systems[name].specializations = SYSTEM_SPECIALIZATIONS[name] || [];
+    applySystemSpecializations(name);
+  }
+
+
+
+
   simulateNpcBehavior();
   renderTaxSidebar();
-  saveGameState((logToConsole = false));
-  for (let i = 0; i < 3; i++) generateRandomContract();
+  setTimeout(() => {
+    const overlay = document.getElementById("loadingOverlay");
+    overlay.classList.add("hide");
+    setTimeout(() => (overlay.style.display = "none"), 500); // Wait for fade to finish
+  }, 1200);
+  document
+  .getElementById("travelSearch")
+  .addEventListener("change", toggleTravelButton);
+  saveGameState(false);
+  for (let i = 1; i < 4; i++) generateContract();
+  renderAvailableContracts();
+  setTimeout(hideLoadingOverlay, 1000);
+  setInterval(() => {
+    const count = getTradesLastMinute();
+    document.getElementById("tradeCount").textContent = count;
+  }, 1000);
+
+  const confirmBtn = document.getElementById("confirmWarpBtn");
+  confirmBtn.replaceWith(confirmBtn.cloneNode(true)); // removes old listeners
+  const newConfirmBtn = document.getElementById("confirmWarpBtn");
+  newConfirmBtn.addEventListener("click", confirmWarp);
 
   document.getElementById("openTariffBtn").addEventListener("click", () => {
     renderTariffModal();
@@ -2107,12 +2770,6 @@ window.onload = function () {
   document.getElementById("closeTariffBtn").addEventListener("click", () => {
     document.getElementById("tariffModal").style.display = "none";
   });
-  window.addEventListener("click", (e) => {
-    if (e.target === document.getElementById("tariffModal")) {
-      document.getElementById("tariffModal").style.display = "none";
-    }
-  });
-  
 
   document.getElementById("closeAboutBtn").addEventListener("click", () => {
     document.getElementById("aboutModal").style.display = "none";
@@ -2126,14 +2783,20 @@ window.onload = function () {
     }
   });
 
-  document
-    .getElementById("travelSearch")
-    .addEventListener("change", toggleTravelButton);
+  document.getElementById("abortWarpBtn").addEventListener("click", () => {
+    abortWarp();
+  });
+
 
   // ✅ Hide loading screen after full load
   // Unified Tick Engine
-  setInterval(() => {
-    if (!gamePaused) tick();
+  const tickInterval = setInterval(() => {
+    tick();
   }, 1000);
-  document.getElementById("loadingOverlay").style.display = "none";
+
+  // Clear interval on page unload to prevent memory leaks
+  window.addEventListener("beforeunload", () => {
+    clearInterval(tickInterval);
+  });
+
 };
